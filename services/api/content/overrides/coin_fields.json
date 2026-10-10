@@ -1,0 +1,27 @@
+{
+  "_comment": [
+    "人工修正层：优先级高于自动抽取，键为钱币 slug（见 content/generated/raw.json）。",
+    "period_source = 'editor' 表示该时期由编辑补充，原文并未写明，评审展示时应与原文内容区分。",
+    "只有原文确实缺失时才在此补，能由正则抽到的不要写进来。"
+  ],
+  "08-三孔布": {
+    "period": "战国晚期",
+    "period_key": "战国晚期",
+    "period_source": "editor"
+  },
+  "13-尖首刀": {
+    "period": "春秋",
+    "period_key": "春秋",
+    "period_source": "editor"
+  },
+  "19-齐大刀": {
+    "period": "战国中期",
+    "period_key": "战国中期",
+    "period_source": "editor"
+  },
+  "27-蚁鼻钱": {
+    "period": "战国中期",
+    "period_key": "战国中期",
+    "period_source": "editor"
+  }
+}

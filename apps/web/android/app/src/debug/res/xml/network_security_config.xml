@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  仅调试包生效（Android 资源合并规则：debug 变体覆盖 src/main 的同名资源）。
+
+  真机联调时后端跑在开发机的 http://<局域网IP>:8000，是明文 HTTP，
+  Android 9+ 默认禁止，所以这里对私有地址放行。
+
+  刻意不用 cleartextTrafficPermitted="true" 一把梭：即便调试包被误发出去，
+  也不会替公网明文流量背书。
+
+  另外：<domain> 只接受域名或 IP 字面量，不支持网段写法。
+  下面列的是常见联调地址，实际请把开发机的局域网 IP 加进来。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <!-- Android 模拟器访问宿主机的固定别名 -->
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <!-- 开发机局域网 IP：真机连本机后端联调用 -->
+        <domain includeSubdomains="false">10.70.67.121</domain>
+    </domain-config>
+</network-security-config>

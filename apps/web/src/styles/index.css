@@ -1,0 +1,313 @@
+@import 'tailwindcss';
+
+/* ============================================================================
+   设计 token —— 全部为 apple.com.cn 参考截图的像素实测值
+   实测方法：Pillow 采样主色 / 行带分析测字高 / 圆角首像素内缩反推半径
+   规范铁律：零阴影、零渐变、全站仅 1 个高饱和色（--color-accent）
+   ========================================================================= */
+@theme {
+  /* ---------- 底色 ---------- */
+  --color-page: #f5f5f7; /* 实测占商店页 89.7% */
+  --color-surface: #ffffff; /* 卡片 */
+  --color-dark: #000000; /* 深色区块：全站唯一用纯黑处 */
+  --color-capsule: #e8e8ed; /* 标签胶囊底 */
+
+  /* ---------- 文字 ---------- */
+  --color-ink: #1d1d1f; /* 实测主文字，非纯黑 */
+  --color-ink-muted: #6e6e73; /* 次级说明文字 */
+  --color-on-dark: #f5f5f7;
+  --color-on-accent: #ffffff;
+
+  /* ---------- 功能色 ---------- */
+  --color-accent: #0071e3; /* 详情页按钮实测；全站唯一高饱和色 */
+  --color-accent-hover: #0077ed;
+  --color-link: #0066cc;
+  --color-mark: #b64400; /* 仅用于 12px 强调标签 */
+
+  /* ---------- 线 ---------- */
+  --color-hairline: #d2d2d7;
+  --color-hairline-soft: rgba(0, 0, 0, 0.08);
+
+  /* ---------- 字体（不下载 Web Font：境外 CDN 不可达） ---------- */
+  --font-sans:
+    system-ui, -apple-system, 'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei',
+    'Source Han Sans SC', sans-serif;
+
+  /* ---------- 字级（行带实测量得） ---------- */
+  /* 页面主标题：「商店」实测字面高 100px → 112px / 600 / -0.02em */
+  --text-hero: 112px;
+  --text-hero--line-height: 1.05;
+  --text-hero--letter-spacing: -0.02em;
+  --text-hero--font-weight: 600;
+
+  /* 区块大标题 / 商品标题：3 行 + 行距 58px → 48px / 600 / 1.2 */
+  --text-display: 48px;
+  --text-display--line-height: 1.2;
+  --text-display--letter-spacing: -0.01em;
+  --text-display--font-weight: 600;
+
+  --text-title: 28px;
+  --text-title--line-height: 1.25;
+  --text-title--font-weight: 600;
+
+  --text-subtitle: 21px;
+  --text-subtitle--line-height: 1.3;
+  --text-subtitle--font-weight: 600;
+
+  --text-body: 17px;
+  --text-body--line-height: 1.47;
+
+  --text-small: 14px;
+  --text-small--line-height: 1.5;
+
+  /* 导航 / 标签：导航字面高实测 13px → 12px */
+  --text-micro: 12px;
+  --text-micro--line-height: 1.33;
+
+  /* ---------- 圆角（首像素内缩反推） ---------- */
+  --radius-card: 22px; /* 卡片：顶行内缩 23px */
+  --radius-card-sm: 12px; /* 选项卡 */
+  --radius-btn: 10px; /* 主按钮：内缩 9px */
+  --radius-thumb: 8px;
+
+  /* ---------- 间距 ---------- */
+  --spacing-section: 100px; /* 区块竖向留白，实测 80–120px */
+  --spacing-block: 40px;
+  --spacing-card: 22px; /* 卡片间隙实测 29px / 卡宽 470px ≈ 6% → 1440 布局约 22px */
+
+  /* ---------- 容器 ---------- */
+  --container-content: 1680px;
+}
+
+/* ============================================================================
+   基础层
+   ========================================================================= */
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-page);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* 中文标题不要被浏览器的自动断行规则破坏，长英文名允许断词 */
+  h1,
+  h2,
+  h3 {
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  p {
+    margin: 0;
+  }
+
+  /* 键盘可达性：设计规范禁阴影，唯一例外是聚焦环 */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  img {
+    display: block;
+    max-width: 100%;
+  }
+}
+
+/* ============================================================================
+   组件层 —— 规格逐项对应参考截图实测几何
+   ========================================================================= */
+@layer components {
+  /* 页面容器：实测左右留白 131px / 2473px ≈ 5.3% */
+  .container-page {
+    width: 100%;
+    max-width: var(--container-content);
+    margin-inline: auto;
+    padding-inline: 5.3%;
+  }
+
+  /* ---------- 卡片：白底 + 22px 圆角 + 无边框无阴影，靠底色差区分 ---------- */
+  .card {
+    background-color: var(--color-surface);
+    border-radius: var(--radius-card);
+    /* 刻意不设 box-shadow / border —— 这是设计规范的一部分 */
+    overflow: hidden;
+  }
+
+  /* ---------- 主按钮：高 53px / 圆角 10px / 纯色填充 / 无阴影 ---------- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 53px;
+    padding-inline: 24px;
+    border: 0;
+    border-radius: var(--radius-btn);
+    font-family: inherit;
+    font-size: var(--text-body);
+    font-weight: 400;
+    line-height: 1;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color 0.18s ease;
+  }
+
+  .btn-primary {
+    background-color: var(--color-accent);
+    color: var(--color-on-accent);
+  }
+  .btn-primary:hover {
+    background-color: var(--color-accent-hover);
+  }
+
+  .btn-secondary {
+    background-color: transparent;
+    color: var(--color-accent);
+    border: 1px solid var(--color-accent);
+  }
+  .btn-secondary:hover {
+    background-color: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  }
+
+  /* ---------- 文字链接 ---------- */
+  .link {
+    color: var(--color-link);
+    text-decoration: none;
+  }
+  .link:hover {
+    text-decoration: underline;
+  }
+
+  /* ---------- 标签胶囊 ---------- */
+  .capsule {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 11px;
+    border-radius: 980px;
+    background-color: var(--color-capsule);
+    color: var(--color-ink);
+    font-size: var(--text-micro);
+    line-height: var(--text-micro--line-height);
+    white-space: nowrap;
+  }
+
+  /* ---------- 强调标签（对应参考里的「新款」） ---------- */
+  .marker {
+    color: var(--color-mark);
+    font-size: var(--text-micro);
+    line-height: var(--text-micro--line-height);
+    font-weight: 600;
+  }
+
+  /* ---------- 发丝线 ---------- */
+  .hairline-b {
+    border-bottom: 1px solid var(--color-hairline-soft);
+  }
+  .hairline-t {
+    border-top: 1px solid var(--color-hairline-soft);
+  }
+  .hairline-box {
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-card-sm);
+  }
+
+  /* ---------- 导航栏：背景与页面同色、12px、底部发丝线、不用阴影 ---------- */
+  .navbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background-color: color-mix(in srgb, var(--color-page) 82%, transparent);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: 1px solid var(--color-hairline-soft);
+  }
+
+  .navbar-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 28px;
+    height: 48px;
+    font-size: var(--text-micro);
+    line-height: var(--text-micro--line-height);
+  }
+
+  /* 移动端导航项收起，改用底部 Tab 栏；此处只留站名与搜索 */
+  @media (max-width: 767px) {
+    .navbar-inner {
+      gap: 12px;
+      justify-content: space-between;
+    }
+  }
+
+  .navbar-link {
+    color: var(--color-ink);
+    text-decoration: none;
+    opacity: 0.86;
+    transition: opacity 0.15s ease;
+  }
+  .navbar-link:hover,
+  .navbar-link[aria-current='page'] {
+    opacity: 1;
+  }
+
+  /* ---------- 移动端底部 Tab 栏：毛玻璃 + 顶部发丝线 ---------- */
+  .tabbar {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 50;
+    display: flex;
+    justify-content: space-around;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background-color: color-mix(in srgb, var(--color-page) 82%, transparent);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border-top: 1px solid var(--color-hairline-soft);
+  }
+
+  .tabbar-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-width: 64px;
+    min-height: 49px;
+    padding-block: 6px;
+    color: var(--color-ink-muted);
+    font-size: 10px;
+    text-decoration: none;
+  }
+  .tabbar-item[aria-current='page'] {
+    color: var(--color-accent);
+  }
+}
+
+/* ============================================================================
+   移动端 token 降级
+   Tailwind v4 的字号/间距工具类引用的是这些 CSS 变量，
+   因此在媒体查询里覆盖变量即可全局生效，无需逐个写响应式前缀。
+   ========================================================================= */
+@media (max-width: 767px) {
+  :root {
+    --text-hero: 44px;
+    --text-display: 30px;
+    --text-title: 22px;
+    --text-subtitle: 19px;
+    --spacing-section: 48px;
+    --spacing-block: 28px;
+    --radius-card: 18px;
+  }
+}

@@ -1,0 +1,62 @@
+# 数字钱币库 · 生产编排
+#
+# 用法（在项目根目录）：
+#   docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
+#
+# 数据不打进镜像：app.db 与图片以只读卷挂载，补数据只需同步文件 + restart。
+# 因此上服务器前要先在本地跑一次数据管线：
+#   python services/api/scripts/run_pipeline.py
+
+name: coin-museum
+
+services:
+  api:
+    build:
+      context: ../services/api
+    restart: unless-stopped
+    environment:
+      COIN_DB: /data/app.db
+      COIN_STATIC: /static
+      COIN_RATE_LIMIT: ${COIN_RATE_LIMIT:-20}
+      # 生产环境前后端同源，本不需要 CORS；
+      # 但打包后的安卓 APK 从 https://localhost 发起请求，必须放行。
+      # 默认值已在 app/config.py 里包含 capacitor 的两个 Origin，此处可追加自有域名。
+      COIN_ALLOWED_ORIGINS: ${COIN_ALLOWED_ORIGINS:-}
+    volumes:
+      - ../services/api/content:/data:ro
+      - ../services/api/static:/static:ro
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=5).status == 200 else 1)"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../apps/web/dist:/srv/web:ro
+      - ../services/api/static/images:/srv/images:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  caddy_data:
+  caddy_config:

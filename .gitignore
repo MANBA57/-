@@ -1,0 +1,35 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+.DS_Store
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+pytest-cache-files-*/
+.mypy_cache/
+
+# 生成物（可由 scripts/run_pipeline.py 重建，不入库）
+services/api/content/generated/
+services/api/content/review/
+services/api/static/images/
+services/api/content/*.db
+services/api/content/*.db-wal
+services/api/content/*.db-shm
+.tmp/
+
+# 安卓工具链与构建产物（机器相关，可重建）
+.toolchain/
+# 注意：apps/web/android 是 Capacitor 生成的工程，**需要入库**
+# （图标、清单、签名配置等定制都在里面），它自带的 .gitignore 会排除 build/ 等产物。
+# 签名密钥：绝对不要入库
+*.keystore
+*.jks
+keystore.properties
+
+# 编辑器
+.vscode/
+.idea/

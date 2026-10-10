@@ -1,0 +1,14 @@
+{
+  "name": "coin-museum",
+  "version": "0.1.0",
+  "private": true,
+  "description": "数字钱币库 · 数字化钱币展馆（先秦馆）",
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "preview": "pnpm --filter web preview",
+    "typecheck": "pnpm --filter web typecheck",
+    "api": "pnpm --filter web exec echo \"后端请用 services/api 下的 venv 启动\""
+  },
+  "packageManager": "pnpm@11.7.0"
+}

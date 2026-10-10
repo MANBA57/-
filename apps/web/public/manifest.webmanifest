@@ -1,0 +1,39 @@
+{
+  "name": "数字钱币库 · 先秦馆",
+  "short_name": "钱币库",
+  "description": "布币、刀币、圜钱、贝币——先秦四大货币体系的数字化展馆，可检索、可对比、可沿时间轴浏览。",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f5f5f7",
+  "theme_color": "#f5f5f7",
+  "categories": ["education", "reference"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    { "name": "钱币库", "url": "/coins" },
+    { "name": "时间轴", "url": "/timeline" },
+    { "name": "术语词典", "url": "/terms" }
+  ]
+}

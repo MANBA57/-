@@ -1,0 +1,8 @@
+packages:
+  - 'apps/*'
+
+# pnpm 10+ 的设置在 pnpm-workspace.yaml，写在 .npmrc 里不生效。
+# 本机上 isolated + junction 布局会导致 Node ESM 解析不到原生二进制包
+# （@typescript/typescript-win32-x64、rolldown、@tailwindcss/oxide 等），
+# 改用扁平布局，行为与 npm 一致，对后续 Capacitor / Gradle 也更友好。
+nodeLinker: hoisted

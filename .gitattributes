@@ -1,0 +1,25 @@
+# 行尾与二进制类型显式声明，避免不同机器上反复出现「LF will be replaced by CRLF」告警，
+# 也避免 git 把图片、密钥库、jar 当文本做行尾转换而损坏它们。
+* text=auto
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.avif binary
+*.ico binary
+*.jar binary
+*.jks binary
+*.keystore binary
+*.ttf binary
+*.ttc binary
+*.woff2 binary
+
+# Windows 脚本：保留 CRLF 更稳妥（PowerShell 两种都吃，但记事本打开更友好）
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+
+# 预渲染产物与 SQL 不需要 diff 噪声
+*.xml text
+*.sql text

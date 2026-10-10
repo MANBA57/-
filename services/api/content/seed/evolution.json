@@ -1,0 +1,106 @@
+{
+  "_comment": [
+    "货币体系演化关系种子数据。每条 note 都直接取自《先秦(2).docx》原文表述，",
+    "不添加原文没有的推断。system_key 对应 category.key。"
+  ],
+  "edges": [
+    {
+      "system_key": "bu",
+      "from_label": "农具铲（镈）",
+      "to_label": "空首布",
+      "kind": "起源",
+      "note": "布币源于农具铲（古称「镈」或「钱」）；空首布由商周时期的农具铲演变而来。"
+    },
+    {
+      "system_key": "bu",
+      "from_label": "空首布",
+      "to_label": "桥足布",
+      "kind": "演变",
+      "note": "桥足布是战国中晚期魏国铸造的青铜货币，平首、圆肩或方肩。"
+    },
+    {
+      "system_key": "bu",
+      "from_label": "空首布",
+      "to_label": "尖足布",
+      "kind": "演变",
+      "note": "尖足布由耸肩尖足空首布演变而来。"
+    },
+    {
+      "system_key": "bu",
+      "from_label": "尖足布",
+      "to_label": "类方足布",
+      "kind": "过渡",
+      "note": "类方足布是尖足布向方足布演变的「中间站」，两足呈尖状但已趋于方正。"
+    },
+    {
+      "system_key": "bu",
+      "from_label": "类方足布",
+      "to_label": "方足布",
+      "kind": "演变",
+      "note": "方足布由尖足布改良而来，是铸行地域最广、存世数量最多的战国布币。"
+    },
+    {
+      "system_key": "bu",
+      "from_label": "圆足布",
+      "to_label": "三孔布",
+      "kind": "特殊形态",
+      "note": "三孔布是圆足布中最为特殊的一种，首部和两足各有一个圆形穿孔。"
+    },
+    {
+      "system_key": "dao",
+      "from_label": "削刀",
+      "to_label": "尖首刀",
+      "kind": "起源",
+      "note": "尖首刀由北方游牧民族日常使用的削刀直接演变而来，是先秦刀币系统中铸行最早的货币之一。"
+    },
+    {
+      "system_key": "dao",
+      "from_label": "尖首刀",
+      "to_label": "针首刀",
+      "kind": "演变",
+      "note": "针首刀铸行于春秋晚期，刀首特别尖细、形如针尖，是刀币中最早的形态之一。"
+    },
+    {
+      "system_key": "dao",
+      "from_label": "尖首刀",
+      "to_label": "截首刀",
+      "kind": "减重",
+      "note": "截首刀由尖首刀截去刀尖而成，与货币减重有关，是为适应小额交易的做法。"
+    },
+    {
+      "system_key": "yuan",
+      "from_label": "玉璧 / 纺轮",
+      "to_label": "圜钱",
+      "kind": "起源",
+      "note": "圜钱由玉璧或纺轮演变而来，战国中晚期出现，最初为圆孔。"
+    },
+    {
+      "system_key": "yuan",
+      "from_label": "圆孔圜钱",
+      "to_label": "方孔半两",
+      "kind": "形制转变",
+      "note": "半圜圆钱是圆孔圜钱向方孔半两过渡时期的重要产物；秦国将圆孔改为方孔，形成圆形方孔。"
+    },
+    {
+      "system_key": "bei",
+      "from_label": "天然海贝",
+      "to_label": "仿制贝",
+      "kind": "演变",
+      "note": "因天然海贝数量有限，出现了石贝、骨贝、铜贝等仿制品。"
+    },
+    {
+      "system_key": "bei",
+      "from_label": "仿制贝",
+      "to_label": "蚁鼻钱",
+      "kind": "演变",
+      "note": "蚁鼻钱是楚国特有的青铜贝币，由仿制贝转化而来。"
+    },
+    {
+      "system_key": "cross",
+      "from_label": "燕明刀（刀币）",
+      "to_label": "明化（圜钱）",
+      "kind": "跨体系",
+      "note": "明化与燕明刀一脉相承，说明燕国货币从刀币向圜钱过渡。"
+    }
+  ]
+}

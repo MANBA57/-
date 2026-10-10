@@ -1,0 +1,74 @@
+# 数字钱币库 · Caddy 配置
+#
+# 站点地址由环境变量 SITE_ADDRESS 控制：
+#   生产     SITE_ADDRESS=coin.example.com  → Caddy 自动申请并续期 Let's Encrypt 证书
+#   本地验证 SITE_ADDRESS=:8080             → 仅 HTTP，不申请证书
+#
+# 另外三个变量是为了让**同一份配置**既能跑在 Docker 里、也能在开发机上直接验证：
+#   API_UPSTREAM  默认 api:8000（compose 的服务名）；本地验证时设 127.0.0.1:8000
+#   WEB_ROOT      默认 /srv/web（compose 挂载点）；本地验证时设 apps/web/dist 的绝对路径
+#   IMAGES_ROOT   默认 /srv/images；本地验证时设 services/api/static/images 的绝对路径
+# 本地验证脚本：python deploy/verify_local.py
+
+{$SITE_ADDRESS:localhost} {
+	encode zstd gzip
+
+	# ---------------------------------------------------------------- API
+	handle /api/* {
+		reverse_proxy {$API_UPSTREAM:api:8000}
+	}
+
+	# ---------------------------------------------------------------- 图片
+	# 用 handle_path 而不是 handle：它会剥掉 /images 前缀，
+	# 于是 /images/coins/x/01.webp 映射到 <IMAGES_ROOT>/coins/x/01.webp。
+	# 若用 handle + root，会变成 <IMAGES_ROOT>/images/... 而 404。
+	#
+	# 图片路径不含内容哈希，重新处理图片后内容会变，故用较短 TTL。
+	handle_path /images/* {
+		root * {$IMAGES_ROOT:/srv/images}
+		header Cache-Control "public, max-age=604800"
+		file_server
+	}
+
+	# ---------------------------------------------------------------- 带哈希的前端资源
+	# 必须单独成一个 handle 块：一开始把默认 Cache-Control 写在全局 header 里、
+	# 再用 @matcher 覆盖，实测覆盖不生效（全局那条仍然胜出，静态资源全变成 no-cache）。
+	# 改成互斥的 handle 块、各自设自己的头，语义才没有歧义。
+	handle /assets/* {
+		root * {$WEB_ROOT:/srv/web}
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# ---------------------------------------------------------------- 前端（SPA 回退）
+	# 预渲染会为每条内容路由生成 dist/<路径>/index.html，所以要显式让
+	# {path}/index.html 参与匹配，否则目录请求会一路落到根 index.html，
+	# 每条路由的独立标题与元数据就白做了。
+	handle {
+		root * {$WEB_ROOT:/srv/web}
+		try_files {path} {path}/index.html /index.html
+		header Cache-Control "no-cache"
+		file_server
+	}
+
+	# Service Worker 与 manifest 不能被长期缓存，否则更新发不出去
+	@nocache_files path /sw.js /manifest.webmanifest
+	header @nocache_files Cache-Control "no-cache"
+
+	# 显式给出 manifest 的类型：Caddy 的 file_server 在 Windows 上会去查注册表，
+	# 查不到就不带 Content-Type，不同服务器上行为不一致。
+	@manifest path /manifest.webmanifest
+	header @manifest Content-Type "application/manifest+json"
+
+	# ---------------------------------------------------------------- 安全头
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
