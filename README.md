@@ -345,7 +345,8 @@ FTS5 内置分词器对中文都不好用：`unicode61` 会把一整串中文当
       （27 条钱币 / 4 大体系 / 48 张图 81.9 MB→7.1 MB / 中文全文检索可用）
 - [x] **P2** 后端 API：11 个只读接口 + FTS5 全文检索 + 限流 + CORS；`pytest` 65 项全绿
 - [x] **P3** 前端展馆：9 个页面 + 移动端适配 + 设计系统落地；Service Worker 离线、PWA manifest、33 条路由预渲染 + sitemap
-- [x] **P4** Capacitor 安卓打包：debug 包 4.02 MB / 签名 release 包 3.13 MB，签名指纹已核对
+- [x] **P4** Capacitor 安卓打包：debug 包 4.29 MB / 签名 release 包 3.09 MB，签名指纹已核对
+      （含青铜绿自适应图标、启动屏、Service Worker 与 33 条预渲染路由）
 - [x] **P5** 云端部署编排：Docker Compose + Caddy + 部署脚本；**用同一份 Caddyfile 在本机验证了完整生产拓扑（15/15 通过）**
 - [ ] **上线**：等你提供服务器与域名（国内主机需先完成 ICP 备案）
 
@@ -373,6 +374,30 @@ python deploy/verify_local.py
 拓扑：Caddy 托管前端静态产物与 `/images`，并把 `/api/*` 反代到不对外暴露端口的
 FastAPI 容器；`app.db` 与图片以**只读卷**挂载，补数据不必重建镜像。
 
+### 只读挂载已验证
+
+生产把数据以只读卷挂进容器，这是条**本地测不出来**的假设——本地数据目录永远可写。
+用 NTFS ACL 把数据目录设为不可写后跑了一遍真实接口：
+
+```bash
+python tools/readonly_mount_check.py --setup      # 复制数据并设为不可写
+python tools/readonly_api_smoke.py                # 11 个接口 + 图片
+python tools/readonly_mount_check.py --teardown   # 恢复权限并清理
+```
+
+结果：**11 个接口 + 图片全部 200**。
+
+顺带纠正一个我一开始的错误判断：`sqlite3.connect()` 默认以读写方式打开，
+我原以为只读挂载下会直接打不开库，并把 `db.py` 改成了 `mode=ro`。
+实测发现 **SQLite 对写保护文件会自动回退为只读**（官方文档：
+"reading only if the file is write protected by the operating system"），
+所以旧写法其实也能跑。`mode=ro` 保留了下来，但理由是「把只读写成显式意图、
+不依赖一条容易被忽略的回退规则」，而不是「修了一个不存在的 bug」。
+
+> 顺带一提，第一次测出「打不开库」是因为我用的 ACL 权限串 `(W,D)` 把**读取**也封了
+> （`os.listdir` 直接 WinError 5），那是过度拒绝、不是只读挂载。
+> 正确的最小权限串是 `(WD,AD)`：能读能列、不能写。
+
 ---
 
 ## 安卓打包
@@ -395,11 +420,22 @@ python tools/install_android_toolchain.py
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass -Force
-& tools/build-apk.ps1 -Mode debug
+& tools/build-apk.ps1 -Mode debug -ApiBase 'http://<开发机局域网IP>:8000'
 & tools/build-apk.ps1 -Mode release
 ```
 
 产物：`apps/web/android/app/build/outputs/apk/{debug,release}/`。
+
+> **脚本里两个容易踩的坑**（都已修，改脚本时别改回去）：
+>
+> 1. **调用原生命令必须包一层 `Invoke-Native`**。原生命令只要往 stderr 写东西，
+>    在 `$ErrorActionPreference='Stop'` 下就会被提升成终止性错误；而 pnpm 每次都会
+>    把命令行回显到 stderr，于是脚本会在构建**成功**的情况下中断。
+>    `$PSNativeCommandUseErrorActionPreference` 管不了这个（它只管非零退出码）。
+> 2. **`Invoke-Native` 里必须 `| Out-Host`**。PowerShell 函数会把写进成功流的内容
+>    全部当作返回值，直接 `& $Exe @Args` 会让调用方拿到的 `$rc` 变成
+>    「整段构建输出 + 退出码」的数组，于是 `$rc -ne 0` 永远成立，
+>    构建明明成功也被判为失败。
 
 ### 工具链自包含（都是被沙箱逼出来的，但在别的机器上同样有用）
 
