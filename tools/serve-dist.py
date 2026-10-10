@@ -12,6 +12,9 @@
 
 用法:
     python tools/serve-dist.py [--port 4173] [--api http://127.0.0.1:8000]
+
+    # 模拟 4G 做性能实测（9 Mbps 下行 + 60ms RTT）
+    python tools/serve-dist.py --port 4174 --throttle-kbps 9000 --throttle-rtt-ms 60
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ import mimetypes
 import os
 import socketserver
 import sys
+import time
 import urllib.parse
 from pathlib import Path
 
@@ -41,6 +45,50 @@ HOP_BY_HOP = {
 class Handler(http.server.SimpleHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "coin-museum-preview"
+
+    # ---------------------------------------------------------------- 限速
+
+    def _pacer(self):
+        """按累计字节数计算"应该已经过去多久"，睡到那个时刻。
+
+        不用「每块固定睡 N 毫秒」：Windows 的 time.sleep 分辨率约 15 ms，
+        按 16 KB 分块时每块只需睡 14.6 ms，会被逐块向上取整，实测整体慢约 20%。
+        按累计量自校正则不受睡眠粒度影响。
+        """
+        kbps = getattr(self.server, "throttle_kbps", 0)
+        if not kbps:
+            return None
+        bytes_per_sec = kbps * 1000 / 8
+        start = time.monotonic()
+        state = {"sent": 0}
+
+        def pace(nbytes: int) -> None:
+            state["sent"] += nbytes
+            due = state["sent"] / bytes_per_sec
+            elapsed = time.monotonic() - start
+            if due > elapsed:
+                time.sleep(due - elapsed)
+
+        return pace
+
+    def _throttle_rtt(self) -> None:
+        """每个请求计一次往返延迟。"""
+        rtt = getattr(self.server, "throttle_rtt_ms", 0)
+        if rtt:
+            time.sleep(rtt / 1000.0)
+
+    def copyfile(self, source, outputfile):  # type: ignore[override]
+        """静态文件的限速发送。不限速时走父类实现（用 sendfile，更快）。"""
+        pace = self._pacer()
+        if pace is None:
+            return super().copyfile(source, outputfile)
+        while True:
+            buf = source.read(32768)
+            if not buf:
+                break
+            outputfile.write(buf)
+            outputfile.flush()
+            pace(len(buf))
 
     # ---------------------------------------------------------------- 代理
 
@@ -78,7 +126,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         if self.command != "HEAD":
-            self.wfile.write(payload)
+            pace = self._pacer()
+            if pace is None:
+                self.wfile.write(payload)
+            else:
+                for i in range(0, len(payload), 32768):
+                    chunk = payload[i : i + 32768]
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+                    pace(len(chunk))
 
     # ---------------------------------------------------------------- 静态
 
@@ -97,12 +153,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return super().send_head()
 
     def do_GET(self) -> None:  # noqa: N802
+        self._throttle_rtt()
         if self._is_proxy_path():
             self._proxy()
             return
         super().do_GET()
 
     def do_HEAD(self) -> None:  # noqa: N802
+        self._throttle_rtt()
         if self._is_proxy_path():
             self._proxy()
             return
@@ -128,6 +186,8 @@ def main() -> int:
     ap.add_argument("--port", type=int, default=4173)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--api", default="http://127.0.0.1:8000", help="后端地址，供 /api 与 /images 反代")
+    ap.add_argument("--throttle-kbps", type=int, default=0, help="下行带宽上限（kbps）。0 表示不限速")
+    ap.add_argument("--throttle-rtt-ms", type=int, default=0, help="每请求计入的往返延迟（ms）。0 表示不计")
     args = ap.parse_args()
 
     if not DIST.is_dir():
@@ -143,8 +203,16 @@ def main() -> int:
     handler = functools.partial(Handler, directory=str(DIST))
     with ReusableServer((args.host, args.port), handler) as httpd:
         httpd.api_base = urllib.parse.urlsplit(args.api)  # type: ignore[attr-defined]
+        httpd.throttle_kbps = args.throttle_kbps  # type: ignore[attr-defined]
+        httpd.throttle_rtt_ms = args.throttle_rtt_ms  # type: ignore[attr-defined]
         print(f"[serve-dist] 托管 {DIST}")
         print(f"[serve-dist] 反代 {PROXY_PREFIXES} -> {args.api}")
+        if args.throttle_kbps:
+            print(
+                f"[serve-dist] 限速 {args.throttle_kbps} kbps"
+                f"（约 {args.throttle_kbps * 1000 / 8 / 1024 / 1024:.1f} MB/s）"
+                f" + {args.throttle_rtt_ms} ms RTT"
+            )
         print(f"[serve-dist] http://{args.host}:{args.port}/")
         httpd.serve_forever()
     return 0

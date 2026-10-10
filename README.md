@@ -132,6 +132,45 @@ SITE_ORIGIN=https://coin.example.com pnpm build
 **安卓自适应图标（含前景安全区）与 11 张不同密度的启动屏**。
 设计是青铜绿底 + 「泉」字——纯色加大字在 48px 下仍认得出。
 
+### 性能实测
+
+不给预览服务器加限速直接测 localhost 是没有意义的；按带宽折算 4G 又要假设并发度与
+连接复用，误差大且无法自证。`tools/serve-dist.py` 因此支持**真实限速**：
+
+```bash
+# 9 Mbps 下行 + 60 ms RTT（4G 建模）
+python tools/serve-dist.py --port 4175 --throttle-kbps 9000 --throttle-rtt-ms 60
+python tools/measure_perf.py --prepare --paths "/,/coins/01-空首布" --base http://127.0.0.1:4175
+#   → 按提示在 PowerShell 里跑 Edge 截图
+python tools/measure_perf.py --restore
+```
+
+实测结果（移动端视口，4G）：
+
+| 页面 | TTFB | FCP | DOMContentLoaded | 请求数 | 传输 |
+|---|---|---|---|---|---|
+| `/` | 210 ms | **664 ms** | 632 ms | 4 | 438.5 KB |
+| `/coins/01-空首布` | 223 ms | **692 ms** | 674 ms | 3 | 438.5 KB |
+
+远低于验收标准「4G 首屏 < 2s」。数据自洽：407 KB 的 JS ÷ 9 Mbps = 362 ms，
+加 60 ms RTT 得 422 ms，实测资源耗时 409 ms。
+
+#### 这套测量工具踩过的坑（都写进代码注释了）
+
+| 尝试 | 结果 |
+|---|---|
+| `--dump-dom` 取数据 | **在 Edge 155 上已失效**，输出恒为空 |
+| 页面用同步 XHR 回传 | 跨源且在无头下**把页面挂死**（实测卡住 90 秒） |
+| `sendBeacon` 回传 | 异步，浏览器进程可能先退出 |
+| 在 load 里顶层导航回传 | 导航导致 `--screenshot` **不再产出文件** |
+| Python 启动 Edge | **一律挂死**，连 `data:` URL 都超时；同一命令从 PowerShell 跑则秒出。这是 Chromium 多进程 mojo 通道在受限进程树下的老问题 |
+| 全新 `--user-data-dir` | Edge 起不来；必须用已初始化过的 profile |
+| 加 `--virtual-time-budget` | 虚拟时间在等待网络时暂停，会低估网络耗时 |
+
+最终可行组合：**PowerShell 启动 Edge + `--screenshot` + 大字渲染指标 + 已初始化 profile**。
+注意 Service Worker 会缓存 `/assets/*`（cache-first），二次测量会得到「407 KB 只用 3 ms」
+这种不可能的数——换端口即可（SW 作用域按源划分）。
+
 ### 后端
 
 ```bash
