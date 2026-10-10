@@ -1,0 +1,5 @@
+﻿# 仅 tools/ 下的开发与测量工具需要，运行期不需要。
+#   websocket-client  tools/measure_cdp.py 连接 DevTools Protocol
+# 安装（清华源在国外常不可达，用阿里云）：
+#   pip install -i https://mirrors.aliyun.com/pypi/simple/ -r requirements-dev.txt
+websocket-client>=1.9

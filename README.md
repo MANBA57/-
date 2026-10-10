@@ -134,28 +134,63 @@ SITE_ORIGIN=https://coin.example.com pnpm build
 
 ### 性能实测
 
-不给预览服务器加限速直接测 localhost 是没有意义的；按带宽折算 4G 又要假设并发度与
-连接复用，误差大且无法自证。`tools/serve-dist.py` 因此支持**真实限速**：
+**首选方式：DevTools Protocol**（`tools/measure_cdp.py`）。
+
+```powershell
+# Edge 必须由 PowerShell 启动（见下方说明），保持运行
+Start-Process -FilePath "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" `
+  -WindowStyle Hidden -ArgumentList @(
+    '--headless','--disable-gpu','--no-first-run','--no-default-browser-check',
+    '--user-data-dir=.tmp\edge-cdp','--remote-debugging-port=9222',
+    '--remote-allow-origins=*','about:blank')
+
+python tools/measure_cdp.py --base http://127.0.0.1:4173 --viewport 375x667 `
+  --paths "/,/coins/01-空首布,/timeline,/evolution,/terms" `
+  --kbps 9000 --latency 60 --shot --json .tmp/cdp/result.json
+```
+
+CDP 一次解决了此前所有的测量难题：
+
+| 能力 | 解决的老问题 |
+|---|---|
+| `Runtime.evaluate` 取回结构化 JSON | 不用再靠读截图 OCR |
+| `Network.emulateNetworkConditions` | 浏览器网络栈层的**真实**限速，就是 Lighthouse 用的那套，不需要自建限速服务器 |
+| `Network.setBypassServiceWorker` | SW 的 `/assets/*` cache-first 会让 407 KB 的 JS 只花 2 ms，数据完全失真 |
+| `Storage.clearDataForOrigin` | 清掉上一轮遗留的 SW 注册与缓存 |
+| `Emulation.setDeviceMetricsOverride` | 精确视口，不再有 `--window-size` 与布局视口不一致导致的「内容被切」假象 |
+| `Page.captureScreenshot` + `captureBeyondViewport` | **整页截图**，不再只截视口 |
+
+实测结果（移动端 375×667，4G = 9 Mbps + 60 ms RTT，5 个页面）：
+
+| 页面 | TTFB | **FCP** | LCP | DCL | 请求数 | 传输 |
+|---|---|---|---|---|---|---|
+| `/` | 3 ms | **640 ms** | 640 ms | 605 ms | 6 | 452.1 KB |
+| `/coins/01-空首布` | 86 ms | **668 ms** | 924 ms | 643 ms | 7 | 521.4 KB |
+| `/timeline` | 80 ms | **668 ms** | 668 ms | 646 ms | 23 | 651.9 KB |
+| `/evolution` | 93 ms | **708 ms** | 708 ms | 686 ms | 3 | 441.7 KB |
+| `/terms` | 93 ms | **704 ms** | 704 ms | 684 ms | 3 | 440.8 KB |
+
+全部远低于验收标准「4G 首屏 < 2s」。数据自洽：407.6 KB 的 JS ÷ 9 Mbps = 371 ms，
+加 60 ms RTT 得 431 ms，实测 475–494 ms（含连接开销）。
+
+> 两套**互相独立**的方法交叉验证过：早期用「限速服务器 + 截图读图」测得首页 FCP 664 ms，
+> 现在用 CDP 测得 640 ms，吻合。
+
+<details>
+<summary>备选方式：自建限速服务器 + 截图读图（在 CDP 不可用时使用）</summary>
 
 ```bash
-# 9 Mbps 下行 + 60 ms RTT（4G 建模）
 python tools/serve-dist.py --port 4175 --throttle-kbps 9000 --throttle-rtt-ms 60
 python tools/measure_perf.py --prepare --paths "/,/coins/01-空首布" --base http://127.0.0.1:4175
-#   → 按提示在 PowerShell 里跑 Edge 截图
+#   → 按提示在 PowerShell 里跑 Edge 截图，再 read_image 读数
 python tools/measure_perf.py --restore
 ```
 
-实测结果（移动端视口，4G）：
+限速用**按累计字节自校正**的节流，不用「每块固定睡 N 毫秒」——
+Windows 的 `time.sleep` 分辨率约 15 ms，按 16 KB 分块时每块只需睡 14.6 ms，
+会被逐块向上取整累积成约 20% 误差（实测 7191 kbps vs 目标 9000）。
 
-| 页面 | TTFB | FCP | DOMContentLoaded | 请求数 | 传输 |
-|---|---|---|---|---|---|
-| `/` | 210 ms | **664 ms** | 632 ms | 4 | 438.5 KB |
-| `/coins/01-空首布` | 223 ms | **692 ms** | 674 ms | 3 | 438.5 KB |
-
-远低于验收标准「4G 首屏 < 2s」。数据自洽：407 KB 的 JS ÷ 9 Mbps = 362 ms，
-加 60 ms RTT 得 422 ms，实测资源耗时 409 ms。
-
-#### 这套测量工具踩过的坑（都写进代码注释了）
+这套方式的踩坑记录（也是当初转向 CDP 的原因）：
 
 | 尝试 | 结果 |
 |---|---|
@@ -163,13 +198,24 @@ python tools/measure_perf.py --restore
 | 页面用同步 XHR 回传 | 跨源且在无头下**把页面挂死**（实测卡住 90 秒） |
 | `sendBeacon` 回传 | 异步，浏览器进程可能先退出 |
 | 在 load 里顶层导航回传 | 导航导致 `--screenshot` **不再产出文件** |
-| Python 启动 Edge | **一律挂死**，连 `data:` URL 都超时；同一命令从 PowerShell 跑则秒出。这是 Chromium 多进程 mojo 通道在受限进程树下的老问题 |
-| 全新 `--user-data-dir` | Edge 起不来；必须用已初始化过的 profile |
 | 加 `--virtual-time-budget` | 虚拟时间在等待网络时暂停，会低估网络耗时 |
 
-最终可行组合：**PowerShell 启动 Edge + `--screenshot` + 大字渲染指标 + 已初始化 profile**。
-注意 Service Worker 会缓存 `/assets/*`（cache-first），二次测量会得到「407 KB 只用 3 ms」
-这种不可能的数——换端口即可（SW 作用域按源划分）。
+</details>
+
+**两条铁律**（本会话反复踩到）：
+
+1. **Edge 必须由 PowerShell 启动，不能由 Python 启动。** Python 起的 Edge 即便
+   WebSocket 能连上，CDP 命令也永远不响应（`Page.enable` 直接超时），
+   连 `data:text/html,<h1>hi</h1>` 都打不开；同一条命令从 PowerShell 执行则一切正常。
+   这是 Chromium 多进程 mojo 通道在受限进程树下的老问题。
+2. **不要用全新的 `--user-data-dir`。** 实测新目录下 Edge 起不来；
+   用已初始化过的目录（如 `.tmp/edge-cdp`）。
+
+依赖：`websocket-client`（仅测量工具用，不在运行期依赖里）：
+
+```bash
+pip install -i https://mirrors.aliyun.com/pypi/simple/ websocket-client
+```
 
 ### 后端
 
