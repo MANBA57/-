@@ -426,16 +426,30 @@ $edge = 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
    可能不一致，会造成「内容被切」的假象。可靠做法是页面内探针：
 
 ```html
+<!-- 探针页：把测量结果渲染成页面上的大字，再截图读取 -->
+<pre id="out" style="font:14px monospace">loading…</pre>
 <iframe id="f" src="/coins" style="width:390px;height:1400px"></iframe>
 <script>
   f.onload = () => setTimeout(() => {
     const d = f.contentDocument
-    document.title = d.documentElement.scrollWidth  // 与 390 比较
+    const de = d.documentElement
+    const bad = [...d.querySelectorAll('body *')]
+      .map(el => ({ el, r: el.getBoundingClientRect() }))
+      .filter(x => x.r.right > 391 && x.r.width > 0)
+      .sort((a, b) => b.r.right - a.r.right).slice(0, 8)
+      .map(x => `${x.el.tagName}.${String(x.el.className||'').slice(0,44)} right=${Math.round(x.r.right)}`)
+    out.textContent = `scrollWidth=${de.scrollWidth} clientWidth=${de.clientWidth}\n` + bad.join('\n')
   }, 3000)
 </script>
 ```
 
+**结果必须截图读取，不能写进 `document.title` 再取**：`--dump-dom` 在 Edge 155 上
+已失效（输出恒为空）。同理，不要指望把数据回传到本地端口——同步 XHR 在无头下会把
+页面挂死。完整踩坑清单见上文「性能实测」。
+
 Edge 无头模式依赖命名管道（Mojo IPC），**在受限沙箱下无法启动**，需在非受限会话中执行。
+另外：**Edge 必须由 PowerShell 启动，不能由 Python 启动**（Python 起的 Edge 一律挂死，
+连 `data:` URL 都超时）；且不能使用全新的 `--user-data-dir`。
 
 ---
 
