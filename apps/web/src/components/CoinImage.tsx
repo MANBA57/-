@@ -59,7 +59,7 @@ export default function CoinImage({ image, alt, kind = 'thumb', className = '', 
           fetchPriority={priority ? 'high' : 'auto'}
           onLoad={() => setLoaded(true)}
           onError={() => setLoaded(true)}
-          className="relative z-10 h-full w-full object-contain"
+          className="absolute inset-0 z-10 h-full w-full object-contain"
         />
       </picture>
     </div>

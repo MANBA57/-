@@ -21,7 +21,7 @@ export default function CoinCard({
   const subtitle = [coin.period_key, coin.states.join('·')].filter(Boolean).join(' · ')
 
   return (
-    <article className="card group relative flex h-full flex-col">
+    <article className="card group relative flex h-full w-full flex-col">
       <Link to={`/coins/${encodeURIComponent(coin.slug)}`} className="block">
         {/* 统一 4:3 图片区：原图长宽比不一，固定容器 + object-contain 保证同排卡片基线对齐 */}
         <div className="relative aspect-[4/3] overflow-hidden rounded-t-card bg-page">

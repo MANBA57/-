@@ -56,7 +56,7 @@ export function useCompare(slugs: string[]) {
   return useQuery({
     queryKey: ['compare', slugs],
     queryFn: () => api.compare(slugs),
-    enabled: slugs.length >= 2,
+    enabled: slugs.length > 0, // 术语页的相关钱币卡片只有一条也要取
     ...STATIC,
   })
 }
