@@ -77,6 +77,9 @@
 
   /* ---------- 容器 ---------- */
   --container-content: 1680px;
+
+  /* ---------- 动效缓动：apple.com 首屏文字入场的实测曲线 ---------- */
+  --ease-apple: cubic-bezier(0.28, 0.11, 0.32, 1);
 }
 
 /* ============================================================================
@@ -309,5 +312,97 @@
     --spacing-section: 48px;
     --spacing-block: 28px;
     --radius-card: 18px;
+  }
+}
+
+/* ============================================================================
+   动效层 —— 参考 apple.com 的页面动效语言，克制但有呼吸感
+   规则：
+     · 入场 = 上浮 + 失焦到清晰（blur 收拢），缓动统一 --ease-apple；
+     · 首屏（无需等待滚动）用 keyframes，滚动区块用 .reveal + IntersectionObserver；
+     · prefers-reduced-motion 下全部关闭，内容直接呈现 —— 动效是加分项不是门槛。
+   ========================================================================= */
+
+/* 首屏入场：加载即播，按 hero-dN 依次错开 */
+@keyframes hero-rise {
+  from {
+    opacity: 0;
+    transform: translateY(32px);
+    filter: blur(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+.hero-enter {
+  animation: hero-rise 1.1s var(--ease-apple) both;
+}
+.hero-d1 { animation-delay: 0.08s; }
+.hero-d2 { animation-delay: 0.2s; }
+.hero-d3 { animation-delay: 0.34s; }
+.hero-d4 { animation-delay: 0.48s; }
+
+/* 首屏主图的缓慢悬浮：几乎不可察觉，但让页面"活着" */
+@keyframes float-soft {
+  to {
+    transform: translateY(-10px);
+  }
+}
+.float-soft {
+  animation: float-soft 5.5s ease-in-out infinite alternate;
+}
+
+/* 轮播说明文字随切换重放入场 */
+@keyframes caption-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.caption-in {
+  animation: caption-in 0.6s var(--ease-apple) both;
+}
+
+/* 滚动入场：进入视口后由 .is-visible 触发过渡 */
+.reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  filter: blur(8px);
+  transition:
+    opacity 0.9s var(--ease-apple),
+    transform 0.9s var(--ease-apple),
+    filter 0.9s var(--ease-apple);
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+
+/* 横滑货架隐藏滚动条（apple.com 的 shelf 一律不露滚动条） */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-enter,
+  .caption-in,
+  .float-soft {
+    animation: none;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+    filter: none;
+    transition: none;
   }
 }

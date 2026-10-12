@@ -415,7 +415,10 @@ def stats(con: sqlite3.Connection) -> StatsOut:
     ).fetchone()
     span_txt = ""
     if span and span[0] is not None:
-        span_txt = f"公元前 {abs(span[0])} 年 — 前 {abs(span[1])} 年"
+        # 起点在公元前的写「公元前 N 年」；终点按正负分别写「前 N 年 / N 年」，
+        # 否则会出现「前 1949 年」这种被误读为公元前的文案
+        end_txt = f"前 {abs(span[1])} 年" if span[1] < 0 else f"{span[1]} 年"
+        span_txt = f"公元前 {abs(span[0])} 年 — {end_txt}"
     return StatsOut(
         coin_count=one("SELECT COUNT(*) FROM coin"),
         category_count=one("SELECT COUNT(*) FROM category"),

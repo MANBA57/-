@@ -21,21 +21,19 @@ export default function CoinCard({
   const subtitle = [coin.period_key, coin.states.join('·')].filter(Boolean).join(' · ')
 
   return (
-    <article className="card group relative flex flex-col">
+    <article className="card group relative flex h-full flex-col">
       <Link to={`/coins/${encodeURIComponent(coin.slug)}`} className="block">
-        <div className="relative overflow-hidden rounded-t-card bg-page">
+        {/* 统一 4:3 图片区：原图长宽比不一，固定容器 + object-contain 保证同排卡片基线对齐 */}
+        <div className="relative aspect-[4/3] overflow-hidden rounded-t-card bg-page">
           {coin.thumbnail ? (
             <CoinImage
               image={coin.thumbnail}
               alt={`${coin.name}${coin.alias ? `（${coin.alias}）` : ''}`}
               kind="thumb"
-              className="transition-transform duration-500 ease-out group-hover:scale-[1.04]"
+              className="h-full transition-transform duration-500 ease-out group-hover:scale-[1.04]"
             />
           ) : (
-            <div
-              className="flex items-center justify-center bg-page"
-              style={{ aspectRatio: '1' }}
-            >
+            <div className="flex h-full items-center justify-center bg-page">
               <span className="text-micro text-ink-muted">暂无图片</span>
             </div>
           )}

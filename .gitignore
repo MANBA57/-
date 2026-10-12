@@ -12,14 +12,17 @@ __pycache__/
 pytest-cache-files-*/
 .mypy_cache/
 
-# 生成物（可由 scripts/run_pipeline.py 重建，不入库）
+# 中间产物（可由脚本重建，不入库）；成品数据库与图片库入库，克隆即可运行
 services/api/content/generated/
 services/api/content/review/
-services/api/static/images/
-services/api/content/*.db
 services/api/content/*.db-wal
 services/api/content/*.db-shm
 .tmp/
+
+# 原始素材（docx/zip，体积过大且 zip 超 GitHub 100MB 单文件上限，本地保存）
+docs/*.zip
+docs/钱币简介/
+docs/钱币简介-29册/
 
 # 安卓工具链与构建产物（机器相关，可重建）
 .toolchain/

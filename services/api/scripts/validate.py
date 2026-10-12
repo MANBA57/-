@@ -144,12 +144,16 @@ def main() -> int:
     static_root = api_dir / "static"
     total_bytes = 0
     missing_files: list[str] = []
+    # 按唯一路径累计体积：原图直出策略下 full/thumb 的 avif/webp 四个字段指向
+    # 同一物理文件，按行×列累加会把同一文件重复计 4 次。
+    seen_paths: set[str] = set()
     for (fa, fw, ta, tw) in cur.execute(
         "SELECT full_avif, full_webp, thumb_avif, thumb_webp FROM coin_image"
     ):
         for rel in (fa, fw, ta, tw):
-            if not rel:
+            if not rel or rel in seen_paths:
                 continue
+            seen_paths.add(rel)
             # 路径形如 /images/coins/01-空首布/01.avif，映射回 static 目录
             p = static_root / rel.lstrip("/").replace("images/", "images/", 1)
             if not p.exists():

@@ -159,6 +159,10 @@ def main() -> int:
     ap.add_argument("--images", default="content/generated/images.json")
     ap.add_argument("--terms", default="content/seed/terms.json")
     ap.add_argument("--evolution", default="content/seed/evolution.json")
+    # 朝代分册数据（docs/钱币简介/）：extract_dynasties.py + import_dynasties.py 产出。
+    # 文件存在即自动并入，不存在则跳过（纯先秦流程不受影响）。
+    ap.add_argument("--dynasties", default="content/generated/dynasties_import.json")
+    ap.add_argument("--dynasties-images", default="content/generated/dynasties_images.json")
     args = ap.parse_args()
 
     api_dir = Path(__file__).resolve().parent.parent
@@ -291,6 +295,98 @@ def main() -> int:
                     ),
                 )
                 img_rows += 1
+
+    # ---- 朝代分册（秦至明末，原图直出）----
+    # dynasty 表原本只插先秦一行、coin.dynasty_key 写死「先秦」，此处按
+    # dynasties_import.json 的注册信息扩展；先秦时期序最大为 4（战国晚期），
+    # 朝代 period_order 统一 +4 错开，保证时间轴先后正确。
+    dyn_path = resolve(args.dynasties)
+    dyn_img_path = resolve(args.dynasties_images)
+    if dyn_path.exists():
+        dyn = json.loads(dyn_path.read_text(encoding="utf-8"))
+        dyn_images: dict[str, dict[str, object]] = {}
+        if dyn_img_path.exists():
+            dyn_images = json.loads(dyn_img_path.read_text(encoding="utf-8"))["images"]
+        else:
+            print("[db] ⚠ 未找到朝代图片 manifest，钱币将无图入库")
+        src_by_key = {d["key"]: f"docs/钱币简介/{d['file']}" for d in dyn["dynasties"]}
+
+        for d in dyn["dynasties"]:
+            cur.execute(
+                "INSERT INTO dynasty(key, name, order_index) VALUES (?,?,?)",
+                (d["key"], d["name"], d["order_index"]),
+            )
+        for cat in dyn["categories"]:
+            cur.execute(
+                "INSERT INTO category(key, name, intro_md, intro_source, order_index) VALUES (?,?,?,?,?)",
+                (cat["key"], cat["name"], cat.get("intro_md"), cat.get("intro_source"), cat.get("order", 4)),
+            )
+
+        dyn_img_rows = 0
+        for coin in dyn["coins"]:
+            f = coin["fields"]
+            pk = f.get("period_key")
+            pmeta = PERIOD_BY_KEY.get(pk) if pk else None
+            dmin, dmax = rng(f.get("diameter_mm"))
+            lmin, lmax = rng(f.get("length_mm"))
+            wmin, wmax = rng(f.get("weight_g"))
+            order_counter += 1
+            cur.execute(
+                """
+                INSERT INTO coin(
+                    slug, dynasty_key, name, alias, category_key,
+                    period, period_key, period_source,
+                    period_start_year, period_end_year, period_order, year_mentioned,
+                    diameter_min_mm, diameter_max_mm, length_min_mm, length_max_mm,
+                    weight_min_g, weight_max_g,
+                    inscription_front, inscription_back, rarity,
+                    description_md, order_index, source_doc, overridden_fields, created_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    coin["slug"], coin["dynasty_key"], coin["name"], f.get("alias"), coin["category_key"],
+                    f.get("period"), pk, f.get("period_source"),
+                    f.get("period_start_year"), f.get("period_end_year"),
+                    4 + f["period_order"] if f.get("period_order") else (pmeta[3] if pmeta else None),
+                    f.get("year_mentioned"),
+                    dmin, dmax, lmin, lmax, wmin, wmax,
+                    f.get("inscription_front"), f.get("inscription_back"), f.get("rarity"),
+                    coin["description_md"], order_counter,
+                    src_by_key.get(coin["dynasty_key"]),
+                    json.dumps(coin.get("overridden_fields") or [], ensure_ascii=False), now,
+                ),
+            )
+            for s in f.get("states") or []:
+                cur.execute("INSERT OR IGNORE INTO coin_state VALUES (?,?)", (coin["slug"], s))
+            for m in f.get("materials") or []:
+                cur.execute("INSERT OR IGNORE INTO coin_material VALUES (?,?)", (coin["slug"], m))
+            for u in f.get("units") or []:
+                cur.execute("INSERT OR IGNORE INTO coin_unit VALUES (?,?)", (coin["slug"], u))
+            for im in coin["images"]:
+                meta = dyn_images.get(str(im["sha256"]))
+                if not meta:
+                    continue
+                cur.execute(
+                    """INSERT INTO coin_image(
+                           coin_slug, category_key, sha256, order_index, role,
+                           width, height, aspect_ratio, lqip,
+                           full_avif, full_webp, thumb_avif, thumb_webp,
+                           source_format, source_bytes, output_bytes)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        coin["slug"], None, im["sha256"], im["order"], "coin",
+                        meta["width"], meta["height"], meta["aspect_ratio"], meta["lqip"],
+                        meta["full"]["avif"], meta["full"]["webp"],
+                        meta["thumb"]["avif"], meta["thumb"]["webp"],
+                        meta["source_format"], meta["source_bytes"],
+                        meta["source_bytes"],  # 原图直出：输出字节数 = 源字节数
+                    ),
+                )
+                dyn_img_rows += 1
+        print(f"[db] 朝代分册: dynasty +{len(dyn['dynasties'])} / coin +{len(dyn['coins'])} / "
+              f"coin_image +{dyn_img_rows}")
+    else:
+        print(f"[db] 未找到 {dyn_path}，跳过朝代分册导入")
 
     # ---- 术语 ----
     for i, t in enumerate(terms):
