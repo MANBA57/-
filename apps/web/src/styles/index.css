@@ -226,14 +226,12 @@
   }
 
   /* ---------- 导航栏：背景与页面同色、12px、底部发丝线、不用阴影 ---------- */
+  /* 实底导航：微信等 WebView 不支持 backdrop-filter，任何透明度都会透字 */
   .navbar {
     position: sticky;
     top: 0;
     z-index: 50;
-    /* 90% 实底 + 毛玻璃：滚动时下层内容不透出，又保留一点玻璃感 */
-    background-color: color-mix(in srgb, var(--color-page) 90%, transparent);
-    backdrop-filter: saturate(180%) blur(20px);
-    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    background-color: var(--color-page);
     border-bottom: 1px solid var(--color-hairline-soft);
   }
 
@@ -275,9 +273,7 @@
     display: flex;
     justify-content: space-around;
     padding-bottom: env(safe-area-inset-bottom, 0px);
-    background-color: color-mix(in srgb, var(--color-page) 82%, transparent);
-    backdrop-filter: saturate(180%) blur(20px);
-    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    background-color: var(--color-page);
     border-top: 1px solid var(--color-hairline-soft);
   }
 

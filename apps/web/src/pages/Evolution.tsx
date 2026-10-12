@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactElement } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useEvolution } from '@/api/hooks'
+import { useCoins, useEvolution } from '@/api/hooks'
 import { ErrorState, Skeleton } from '@/components/States'
 import type { EvolutionOut } from '@/api/types'
 
@@ -12,14 +12,22 @@ const SYSTEM_LABEL: Record<string, string> = {
   cross: '跨体系',
 }
 
-const NODE_W = 170
-const NODE_H = 44
-const SIB_GAP = 26 // 同层兄弟之间的横向间距
-const LEVEL_H = 92 // 每层的高度（层间留出连线空间）
-const SYS_GAP = 52 // 体系之间的间距
-const PAD = 36
+const NODE_W = 176
+const NODE_H_COIN = 150 // 币节点：上实物图（约 100px 高）下钱文名
+const NODE_H_ORIGIN = 64 // 源头器物节点：上线描图标下器物名
+const SIB_GAP = 28
+const LEVEL_H = 200 // 层高 = 币节点高 + 连线空间
+const SYS_GAP = 56
+const PAD = 40
 
-type Placed = { label: string; x: number; y: number; isCoin: boolean; slug: string | null }
+type Placed = {
+  label: string
+  x: number
+  y: number
+  h: number
+  isCoin: boolean
+  slug: string | null
+}
 type Header = { key: string; x: number; width: number }
 
 /**
@@ -106,11 +114,13 @@ function layout(data: EvolutionOut): {
     levels.forEach((lv, d) => {
       lv.forEach((label, i) => {
         const meta = byLabel.get(label)
+        const isCoin = meta?.is_coin ?? false
         placed.push({
           label,
           x: cursorX + i * (NODE_W + SIB_GAP),
           y: PAD + d * LEVEL_H,
-          isCoin: meta?.is_coin ?? false,
+          h: isCoin ? NODE_H_COIN : NODE_H_ORIGIN,
+          isCoin,
           slug: meta?.slug ?? null,
         })
       })
@@ -125,21 +135,84 @@ function layout(data: EvolutionOut): {
     placed,
     headers,
     width: cursorX - SYS_GAP + PAD,
-    height: PAD * 2 + maxLevels * LEVEL_H,
+    height: PAD * 2 + (maxLevels - 1) * LEVEL_H + NODE_H_COIN,
   }
+}
+
+/**
+ * 源头器物的线描小图标（铲 / 削刀 / 纺轮 / 玉璧 / 海贝）。
+ * 单色发丝线，与全站零阴影零渐变的规范一致——没有库内实物的节点
+ * 也要让门外汉一眼看出「货币的前身是件日用品」。
+ */
+function OriginGlyph({ label }: { label: string }) {
+  const s = { stroke: 'var(--color-ink-muted)', strokeWidth: 1.6, fill: 'none' } as const
+  let glyph: ReactElement
+  if (label.includes('铲')) {
+    // 空首铲：竖柄 + 梯形铲身 + 中脊线
+    glyph = (
+      <>
+        <path d="M16 0 v7" {...s} />
+        <path d="M7 7 h18 l-2.5 21 h-13 z" {...s} />
+        <path d="M16 7 v21" {...s} strokeWidth={1.2} />
+      </>
+    )
+  } else if (label.includes('刀')) {
+    // 削刀：弧背刀身 + 直柄 + 柄端环
+    glyph = (
+      <>
+        <path d="M2 6 C 12 3, 22 9, 25 19 L 19 22 C 16 14, 9 11, 2 12 Z" {...s} />
+        <path d="M25 19 L 30 25" {...s} />
+        <circle cx={31.5} cy={27} r={2.4} {...s} />
+      </>
+    )
+  } else if (label.includes('纺轮') || label.includes('璧')) {
+    // 纺轮 / 玉璧：同心圆环
+    glyph = (
+      <>
+        <circle cx={16} cy={16} r={13} {...s} />
+        <circle cx={16} cy={16} r={5.5} {...s} />
+      </>
+    )
+  } else if (label.includes('贝')) {
+    // 海贝：椭圆壳 + 齿纹
+    glyph = (
+      <>
+        <path d="M16 1 C 25 1, 30 9, 29 17 C 28 25, 22 31, 16 31 C 10 31, 4 25, 3 17 C 2 9, 7 1, 16 1 Z" {...s} />
+        <path d="M11 4 v25 M16 2 v30 M21 4 v25" {...s} strokeWidth={1.1} />
+      </>
+    )
+  } else {
+    glyph = <circle cx={16} cy={16} r={12} {...s} strokeDasharray="3 4" />
+  }
+  return (
+    <g transform="translate(-16, -17)">
+      {glyph}
+    </g>
+  )
 }
 
 /**
  * 货币体系演化图。
  *
- * 手绘 SVG —— 21 个节点、14 条边，用不着图布局库。
- * 版式：每个体系一栏；栏内**深度即行号，同层兄弟横向并排**，
- * 再用重心排序让父子上下对齐，箭头因此基本是竖直的，演化方向一眼可读。
+ * 手绘 SVG —— 用不着图布局库。版式：每个体系一栏；栏内**深度即行号，
+ * 同层兄弟横向并排**，再用重心排序让父子上下对齐，箭头基本竖直，演化方向一眼可读。
+ * 每个钱币节点带实物缩略图（由 coins 接口的 order 序前段提供，先秦币都在前 60 条内），
+ * 源头器物节点配线描图标 —— 让门外汉不用读字也能看懂「日用品怎么变成钱」。
  */
 export default function Evolution() {
   const evolution = useEvolution()
+  // 先秦币排在 order 序最前，一次取 60 条足够覆盖演化图全部钱币节点
+  const coins = useCoins({ page_size: 60, sort: 'order' })
   const navigate = useNavigate()
   const [hovered, setHovered] = useState<string | null>(null)
+
+  const thumbs = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const c of coins.data?.items ?? []) {
+      if (c.thumbnail) m.set(c.slug, c.thumbnail.webp)
+    }
+    return m
+  }, [coins.data])
 
   const { placed, headers, width, height } = useMemo(
     () =>
@@ -175,7 +248,7 @@ export default function Evolution() {
 
       {evolution.isPending ? (
         <div className="container-page">
-          <Skeleton className="h-[520px] w-full rounded-card" />
+          <Skeleton className="h-[720px] w-full rounded-card" />
         </div>
       ) : (
         <div className="overflow-x-auto pb-6">
@@ -218,7 +291,7 @@ export default function Evolution() {
                   <text
                     key={h.key}
                     x={h.x}
-                    y={PAD - 14}
+                    y={PAD - 18}
                     fontSize="12"
                     fill="var(--color-ink-muted)"
                   >
@@ -233,7 +306,7 @@ export default function Evolution() {
                   if (!a || !b) return null
                   const active = hovered === e.from_label || hovered === e.to_label
                   const x1 = a.x + NODE_W / 2
-                  const y1 = a.y + NODE_H
+                  const y1 = a.y + a.h
                   const x2 = b.x + NODE_W / 2
                   const y2 = b.y
                   const midY = (y1 + y2) / 2
@@ -264,6 +337,7 @@ export default function Evolution() {
                 {placed.map((p) => {
                   const active = hovered === p.label
                   const clickable = p.isCoin && p.slug
+                  const thumb = p.slug ? thumbs.get(p.slug) : undefined
                   return (
                     <g
                       key={p.label}
@@ -278,22 +352,68 @@ export default function Evolution() {
                         x={p.x}
                         y={p.y}
                         width={NODE_W}
-                        height={NODE_H}
+                        height={p.h}
                         rx={12}
-                        fill={active ? 'var(--color-accent)' : 'var(--color-surface)'}
-                        stroke={clickable ? 'var(--color-hairline)' : 'var(--color-capsule)'}
+                        fill={active ? 'var(--color-accent)' : p.isCoin ? 'var(--color-surface)' : 'var(--color-page)'}
+                        stroke={
+                          active
+                            ? 'var(--color-accent)'
+                            : p.isCoin
+                              ? 'var(--color-hairline)'
+                              : 'var(--color-hairline-soft)'
+                        }
                         strokeWidth={1}
+                        strokeDasharray={p.isCoin ? undefined : '4 4'}
                       />
-                      <text
-                        x={p.x + NODE_W / 2}
-                        y={p.y + NODE_H / 2 + 5}
-                        textAnchor="middle"
-                        fontSize="13"
-                        fontWeight={clickable ? 600 : 400}
-                        fill={active ? '#fff' : 'var(--color-ink)'}
-                      >
-                        {p.label.length > 12 ? `${p.label.slice(0, 12)}…` : p.label}
-                      </text>
+
+                      {p.isCoin ? (
+                        <>
+                          {/* 实物缩略图：等比 contain 居中在节点上部（与卡片舞台同一语言） */}
+                          <rect
+                            x={p.x + 10}
+                            y={p.y + 10}
+                            width={NODE_W - 20}
+                            height={NODE_H_COIN - 44}
+                            rx={8}
+                            fill="var(--color-page)"
+                          />
+                          {thumb ? (
+                            <image
+                              href={thumb}
+                              x={p.x + 10}
+                              y={p.y + 10}
+                              width={NODE_W - 20}
+                              height={NODE_H_COIN - 44}
+                              preserveAspectRatio="xMidYMid meet"
+                            />
+                          ) : null}
+                          <text
+                            x={p.x + NODE_W / 2}
+                            y={p.y + p.h - 14}
+                            textAnchor="middle"
+                            fontSize="13"
+                            fontWeight={600}
+                            fill={active ? '#fff' : 'var(--color-ink)'}
+                          >
+                            {p.label.length > 12 ? `${p.label.slice(0, 12)}…` : p.label}
+                          </text>
+                        </>
+                      ) : (
+                        <>
+                          <g transform={`translate(${p.x + NODE_W / 2}, ${p.y + 22})`}>
+                            <OriginGlyph label={p.label} />
+                          </g>
+                          <text
+                            x={p.x + NODE_W / 2}
+                            y={p.y + p.h - 10}
+                            textAnchor="middle"
+                            fontSize="12"
+                            fill={active ? '#fff' : 'var(--color-ink-muted)'}
+                          >
+                            {p.label.length > 12 ? `${p.label.slice(0, 12)}…` : p.label}
+                          </text>
+                        </>
+                      )}
                     </g>
                   )
                 })}
@@ -301,7 +421,7 @@ export default function Evolution() {
             </div>
 
             <p className="mt-4 text-micro text-ink-muted">
-              带边框的节点可点击进入钱币详情；灰色箭头为演变方向，标注文字为演变类型。
+              白底节点可点击进入钱币详情；虚线框为演变前的实用器物；灰色箭头为演变方向，标注文字为演变类型。
             </p>
           </div>
         </div>
