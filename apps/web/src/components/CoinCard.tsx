@@ -30,7 +30,8 @@ export default function CoinCard({
               image={coin.thumbnail}
               alt={`${coin.name}${coin.alias ? `（${coin.alias}）` : ''}`}
               kind="thumb"
-              className="h-full transition-transform duration-500 ease-out group-hover:scale-[1.04]"
+              fill
+              className="transition-transform duration-500 ease-out group-hover:scale-[1.04]"
             />
           ) : (
             <div className="flex h-full items-center justify-center bg-page">
@@ -74,7 +75,7 @@ export default function CoinCard({
                 ? '对比最多 3 枚，请先移除一枚'
                 : '加入对比'
           }
-          className="absolute right-4 top-4 rounded-full px-3 py-1.5 text-micro transition-colors disabled:opacity-40"
+          className="absolute right-4 top-4 z-20 rounded-full px-3 py-1.5 text-micro transition-colors disabled:opacity-40"
           style={{
             backgroundColor: inCompare ? 'var(--color-accent)' : 'rgba(255,255,255,.9)',
             color: inCompare ? '#fff' : 'var(--color-ink)',

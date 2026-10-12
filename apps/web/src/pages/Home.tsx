@@ -74,7 +74,8 @@ function HeroStage({ categories }: { categories: CategoryOut[] }) {
               alt={c.name}
               kind="full"
               priority={i === 0}
-              className={`h-full bg-surface!${i === idx ? ' float-soft' : ''}`}
+              fill
+              className={`bg-surface!${i === idx ? ' float-soft' : ''}`}
             />
           </Link>
         ))}
@@ -196,13 +197,14 @@ export default function Home() {
                 to={`/coins?category=${c.key}`}
                 className="group w-[78vw] shrink-0 snap-start overflow-hidden rounded-card bg-[#1d1d1f] transition-transform duration-500 ease-out hover:-translate-y-1.5 sm:w-[400px]"
               >
-                <div className="h-64 overflow-hidden sm:h-72">
+                <div className="relative h-64 overflow-hidden bg-page sm:h-72">
                   {c.images[0] ? (
                     <CoinImage
                       image={c.images[0]}
                       alt={c.name}
                       kind="full"
-                      className="h-full transition-transform duration-700 ease-out group-hover:scale-[1.05]"
+                      fill
+                      className="transition-transform duration-700 ease-out group-hover:scale-[1.05]"
                     />
                   ) : (
                     <div className="h-full w-full bg-white/5" />

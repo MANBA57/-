@@ -8,6 +8,12 @@ type Props = {
   kind?: 'thumb' | 'full'
   className?: string
   priority?: boolean
+  /**
+   * 铺满父容器（父级须有确定的宽高，如 4:3 舞台）。
+   * 不用 image.aspect_ratio 撑容器 —— 网格里各币原图比例不一，
+   * 让每张图 object-contain 居中在统一舞台上，卡片才不会东倒西歪。
+   */
+  fill?: boolean
 }
 
 /**
@@ -20,7 +26,7 @@ type Props = {
  *     实测它会把真图整个糊住；
  *  3. 全站禁用阴影，层次只靠圆角与底色差。
  */
-export default function CoinImage({ image, alt, kind = 'thumb', className = '', priority }: Props) {
+export default function CoinImage({ image, alt, kind = 'thumb', className = '', priority, fill }: Props) {
   const [loaded, setLoaded] = useState(false)
   const avif = kind === 'thumb' ? image.thumb_avif : image.avif
   const webp = kind === 'thumb' ? image.thumb_webp : image.webp
@@ -28,8 +34,8 @@ export default function CoinImage({ image, alt, kind = 'thumb', className = '', 
 
   return (
     <div
-      className={`relative overflow-hidden bg-page ${className}`}
-      style={{ aspectRatio: String(ratio) }}
+      className={`overflow-hidden bg-page ${fill ? 'absolute inset-0' : 'relative'} ${className}`}
+      style={fill ? undefined : { aspectRatio: String(ratio) }}
     >
       {image.lqip ? (
         <img
