@@ -1,15 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  生产姿态：禁止明文 HTTP。
-
-  调试包会用到 app/src/debug/res/xml/network_security_config.xml 覆盖本文件
-  （Android 资源合并规则：debug 变体优先），那里对局域网地址放行了明文，
-  方便真机连本机后端联调。发布包不受影响。
--->
+<!-- 只对线上服务器放行明文 HTTP；其他域名维持 Android 9+ 的默认严格策略 -->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false">
-        <trust-anchors>
-            <certificates src="system" />
-        </trust-anchors>
-    </base-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">47.97.51.108</domain>
+    </domain-config>
 </network-security-config>

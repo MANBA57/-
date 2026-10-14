@@ -38,6 +38,26 @@ export function encodePath(path: string): string {
     .join('/')
 }
 
+/**
+ * 把响应里以 /images/ 开头的资源路径补上 API_BASE。
+ *
+ * 后端返回的图片路径是相对路径，网页端同源没问题；但 APK 里页面跑在
+ * https://localhost 源上，相对路径会解析到那个不存在的地址，图片全裂——
+ * 数据能加载、图片全 404 就是这个坑。API_BASE 为空（网页构建）时此函数恒等。
+ */
+function absolutizeImages<T>(data: T): T {
+  if (typeof data === 'string') return data
+  if (Array.isArray(data)) return data.map(absolutizeImages) as unknown as T
+  if (data && typeof data === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
+      out[k] = typeof v === 'string' && v.startsWith('/images/') ? API_BASE + v : absolutizeImages(v)
+    }
+    return out as T
+  }
+  return data
+}
+
 async function request<T>(path: string, params?: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
   const url = `${API_BASE}${encodePath(path)}${buildQuery(params)}`
   let res: Response
@@ -64,7 +84,7 @@ async function request<T>(path: string, params?: Record<string, unknown>, signal
     throw new ApiError(res.status, detail)
   }
 
-  return (await res.json()) as T
+  return absolutizeImages((await res.json()) as T)
 }
 
 export const api = {

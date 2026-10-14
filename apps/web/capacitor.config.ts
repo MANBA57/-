@@ -10,7 +10,10 @@ import type { CapacitorConfig } from '@capacitor/cli'
  *   生产：VITE_API_BASE=https://<你的域名>   → 同源 HTTPS，无需放行混合内容
  *   联调：VITE_API_BASE=http://<局域网IP>:8000 → 需放行混合内容（见下）
  *
- * allowMixedContent 只在 API 是明文 HTTP 时才开，避免为了联调把生产包也放宽。
+ * allowMixedContent 放开「HTTPS 页面请求 HTTP 资源」的混合内容检查；
+ * cleartext 放开 Android 9+ 的系统级明文流量拦截（usesCleartextTraffic）——
+ * 两者缺一不可：只开前者，所有 /api 请求仍会被系统网络层掐掉，
+ * 表现为「手机上只有前端、后端加载失败」。
  */
 const apiBase = process.env.VITE_API_BASE ?? ''
 const isCleartextApi = apiBase.startsWith('http://')
@@ -22,6 +25,8 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   server: {
     androidScheme: 'https',
+    // API 是明文 HTTP 时必须开：Android 9+ 默认禁所有明文流量
+    cleartext: isCleartextApi,
   },
   android: {
     // 明文 API 联调时才允许混合内容
