@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import CompareBar from '@/components/CompareBar'
+import MusicPlayer from '@/components/MusicPlayer'
 import { useCompareList } from '@/lib/compare'
 
 const NAV = [
@@ -67,6 +68,8 @@ export default function App() {
       </main>
 
       <CompareBar />
+
+      <MusicPlayer />
 
       <nav className="tabbar md:hidden" aria-label="底部导航">
         {TABS.map((tab) => (

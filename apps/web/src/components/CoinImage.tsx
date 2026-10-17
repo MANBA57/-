@@ -47,7 +47,9 @@ export default function CoinImage({ image, alt, kind = 'thumb', className = '', 
         />
       ) : null}
       <picture>
-        <source srcSet={avif} type="image/avif" />
+        {/* 服务器缩略图管线只产 webp（thumb_avif 与 thumb_webp 同址时跳过 avif 源，
+            避免按 image/avif 提示去取 webp 字节） */}
+        {avif !== webp ? <source srcSet={avif} type="image/avif" /> : null}
         <source srcSet={webp} type="image/webp" />
         <img
           src={webp}

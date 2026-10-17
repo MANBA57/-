@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 启动页背景：用户提供的水墨钱币罗盘图。
+     源图已衬边到 9:19.5（主流全面屏比例），fill 拉伸在不同机型上变形 <4% 不可见。 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/splash_base" />
+    <item>
+        <bitmap
+            android:src="@drawable/splash_bg"
+            android:gravity="fill"
+            android:tileMode="disabled" />
+    </item>
+</layer-list>

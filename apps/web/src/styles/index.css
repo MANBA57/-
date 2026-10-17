@@ -366,6 +366,16 @@
   animation: caption-in 0.6s var(--ease-apple) both;
 }
 
+/* 背景音乐封面：播放中的唱片式缓旋 */
+@keyframes disc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.disc-spin {
+  animation: disc-spin 14s linear infinite;
+}
+
 /* 滚动入场：进入视口后由 .is-visible 触发过渡 */
 .reveal {
   opacity: 0;
@@ -393,7 +403,8 @@
 @media (prefers-reduced-motion: reduce) {
   .hero-enter,
   .caption-in,
-  .float-soft {
+  .float-soft,
+  .disc-spin {
     animation: none;
   }
   .reveal {

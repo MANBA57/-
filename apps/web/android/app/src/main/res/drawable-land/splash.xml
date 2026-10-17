@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 横屏：等比居中，避免横向拉伸变形，两侧以底色补齐 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/splash_base" />
+    <item>
+        <bitmap
+            android:src="@drawable/splash_bg"
+            android:gravity="center"
+            android:tileMode="disabled" />
+    </item>
+</layer-list>

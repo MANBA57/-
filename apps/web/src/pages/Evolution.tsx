@@ -209,7 +209,7 @@ export default function Evolution() {
   const thumbs = useMemo(() => {
     const m = new Map<string, string>()
     for (const c of coins.data?.items ?? []) {
-      if (c.thumbnail) m.set(c.slug, c.thumbnail.webp)
+      if (c.thumbnail) m.set(c.slug, c.thumbnail.thumb_webp)
     }
     return m
   }, [coins.data])

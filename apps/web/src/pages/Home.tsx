@@ -202,7 +202,7 @@ export default function Home() {
                     <CoinImage
                       image={c.images[0]}
                       alt={c.name}
-                      kind="full"
+                      kind="thumb"
                       fill
                       className="transition-transform duration-700 ease-out group-hover:scale-[1.05]"
                     />
