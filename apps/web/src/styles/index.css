@@ -376,6 +376,38 @@
   animation: disc-spin 14s linear infinite;
 }
 
+/* ---------- 环境背景：钱币剪影的慢速漂移（46–80s 往返） ---------- */
+@keyframes amb-a {
+  from {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  to {
+    transform: translate3d(30px, -24px, 0) rotate(6deg);
+  }
+}
+@keyframes amb-b {
+  from {
+    transform: translate3d(0, 0, 0) rotate(2deg);
+  }
+  to {
+    transform: translate3d(-26px, 30px, 0) rotate(-5deg);
+  }
+}
+@keyframes amb-c {
+  from {
+    transform: translate3d(-10px, 12px, 0) rotate(-3deg);
+  }
+  to {
+    transform: translate3d(22px, -18px, 0) rotate(4deg);
+  }
+}
+.amb-1 { animation: amb-a 64s ease-in-out infinite alternate; }
+.amb-2 { animation: amb-b 52s ease-in-out infinite alternate; }
+.amb-3 { animation: amb-c 74s ease-in-out infinite alternate; }
+.amb-4 { animation: amb-a 46s ease-in-out infinite alternate-reverse; }
+.amb-5 { animation: amb-b 80s ease-in-out infinite alternate; }
+.amb-6 { animation: amb-c 58s ease-in-out infinite alternate-reverse; }
+
 /* 滚动入场：进入视口后由 .is-visible 触发过渡 */
 .reveal {
   opacity: 0;
@@ -405,6 +437,14 @@
   .caption-in,
   .float-soft,
   .disc-spin {
+    animation: none;
+  }
+  .amb-1,
+  .amb-2,
+  .amb-3,
+  .amb-4,
+  .amb-5,
+  .amb-6 {
     animation: none;
   }
   .reveal {

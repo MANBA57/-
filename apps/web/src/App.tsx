@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import CompareBar from '@/components/CompareBar'
+import AmbientBackground from '@/components/AmbientBackground'
 import MusicPlayer from '@/components/MusicPlayer'
 import { useCompareList } from '@/lib/compare'
 
@@ -25,6 +26,7 @@ export default function App() {
 
   return (
     <div className="min-h-dvh bg-page text-ink">
+      <AmbientBackground />
       <header className="navbar">
         <nav className="container-page navbar-inner" aria-label="主导航">
           {/* 移动端：只留站名与搜索，导航交给底部 Tab 栏（6 个链接在 390px 下必然溢出） */}
@@ -63,7 +65,7 @@ export default function App() {
         </nav>
       </header>
 
-      <main className="pb-[calc(49px+env(safe-area-inset-bottom,0px))] md:pb-0">
+      <main className="relative z-10 pb-[calc(49px+env(safe-area-inset-bottom,0px))] md:pb-0">
         <Outlet />
       </main>
 
