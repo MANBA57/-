@@ -152,6 +152,40 @@ def rng(v: dict | None) -> tuple[float | None, float | None]:
     return (v.get("min"), v.get("max"))
 
 
+# ---- AI 增强层（overrides/coin_ai.json）----
+# 键为 slug；值里的 description_md 是重写后的介绍，
+# 其余键（period/states/materials/alias…）是经人工仲裁的元数据勘误，优先级最高。
+# 下划线开头键（_reason 等）为注释，不落库。
+AI_FIELD_KEYS = {
+    "period", "period_key", "period_source", "period_start_year", "period_end_year",
+    "year_mentioned", "alias", "states", "materials", "units",
+    "inscription_front", "inscription_back", "rarity",
+    "diameter_mm", "length_mm", "weight_g",
+}
+
+
+def apply_ai_layer(
+    ai: dict, slug: str, fields: dict, description: str | None, overridden: list | None
+) -> tuple[dict, str | None, list]:
+    layer = ai.get(slug)
+    if not layer:
+        return fields, description, list(overridden or [])
+    ov = list(overridden or [])
+    new_desc = layer.get("description_md")
+    if new_desc:
+        description = new_desc
+        if "description_md" not in ov:
+            ov.append("description_md")
+    for k, v in layer.items():
+        if k.startswith("_") or k == "description_md":
+            continue
+        if k in AI_FIELD_KEYS:
+            fields = {**fields, k: v}
+            if k not in ov:
+                ov.append(k)
+    return fields, description, ov
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default="content/app.db")
@@ -163,6 +197,8 @@ def main() -> int:
     # 文件存在即自动并入，不存在则跳过（纯先秦流程不受影响）。
     ap.add_argument("--dynasties", default="content/generated/dynasties_import.json")
     ap.add_argument("--dynasties-images", default="content/generated/dynasties_images.json")
+    # AI 增强层：描述重写 + 元数据勘误（键为 slug，见 overrides/coin_ai.json）
+    ap.add_argument("--ai-layer", default="content/overrides/coin_ai.json")
     args = ap.parse_args()
 
     api_dir = Path(__file__).resolve().parent.parent
@@ -175,6 +211,11 @@ def main() -> int:
     images = json.loads(resolve(args.images).read_text(encoding="utf-8"))
     terms = json.loads(resolve(args.terms).read_text(encoding="utf-8"))["terms"]
     edges = json.loads(resolve(args.evolution).read_text(encoding="utf-8"))["edges"]
+
+    ai_path = resolve(args.ai_layer)
+    ai = json.loads(ai_path.read_text(encoding="utf-8")) if ai_path.exists() else {}
+    if ai:
+        print(f"[db] AI 增强层: {len(ai)} 条（描述重写 + 勘误）")
 
     db_path = resolve(args.db)
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -210,6 +251,9 @@ def main() -> int:
     for cat in raw["categories"]:
         for coin in cat["coins"]:
             f = coin["fields"]
+            f, ai_desc, ai_ov = apply_ai_layer(
+                ai, coin["slug"], f, coin["description_md"], coin.get("overridden_fields")
+            )
             pk = f.get("period_key")
             pmeta = PERIOD_BY_KEY.get(pk) if pk else None
             dmin, dmax = rng(f.get("diameter_mm"))
@@ -235,8 +279,8 @@ def main() -> int:
                     pmeta[3] if pmeta else None, f.get("year_mentioned"),
                     dmin, dmax, lmin, lmax, wmin, wmax,
                     f.get("inscription_front"), f.get("inscription_back"), f.get("rarity"),
-                    coin["description_md"], order_counter, raw["meta"]["source_doc"],
-                    json.dumps(coin.get("overridden_fields") or [], ensure_ascii=False), now,
+                    ai_desc, order_counter, raw["meta"]["source_doc"],
+                    json.dumps(ai_ov, ensure_ascii=False), now,
                 ),
             )
             for s in f.get("states") or []:
@@ -325,6 +369,9 @@ def main() -> int:
         dyn_img_rows = 0
         for coin in dyn["coins"]:
             f = coin["fields"]
+            f, ai_desc, ai_ov = apply_ai_layer(
+                ai, coin["slug"], f, coin["description_md"], coin.get("overridden_fields")
+            )
             pk = f.get("period_key")
             pmeta = PERIOD_BY_KEY.get(pk) if pk else None
             dmin, dmax = rng(f.get("diameter_mm"))
@@ -351,9 +398,9 @@ def main() -> int:
                     f.get("year_mentioned"),
                     dmin, dmax, lmin, lmax, wmin, wmax,
                     f.get("inscription_front"), f.get("inscription_back"), f.get("rarity"),
-                    coin["description_md"], order_counter,
+                    ai_desc, order_counter,
                     src_by_key.get(coin["dynasty_key"]),
-                    json.dumps(coin.get("overridden_fields") or [], ensure_ascii=False), now,
+                    json.dumps(ai_ov, ensure_ascii=False), now,
                 ),
             )
             for s in f.get("states") or []:

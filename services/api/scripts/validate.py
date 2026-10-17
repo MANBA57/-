@@ -164,9 +164,9 @@ def main() -> int:
         errors.append(f"图片文件缺失 {len(missing_files)} 个，例如: {missing_files[:5]}")
 
     total_mb = total_bytes / 1048576
-    print(f"[validate] 图片文件总体积: {total_mb:.2f} MB（上限 {args.max_image_mb} MB）")
-    if total_mb > args.max_image_mb:
-        errors.append(f"图片体积 {total_mb:.2f} MB 超过上限 {args.max_image_mb} MB")
+    # 「原图直出」策略（用户决策）：详情页直出原始字节，列表走 -thumb.webp；
+    # 总体积不再是发布约束，只做提示。历史压缩时代曾设 8MB 硬上限，已废止。
+    print(f"[validate] 图片文件总体积: {total_mb:.2f} MB（原图直出策略，仅提示）")
 
     # ---- 全文检索 ----
     fts_fail: list[str] = []
