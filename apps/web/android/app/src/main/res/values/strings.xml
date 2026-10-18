@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">数字钱币库</string>
-    <string name="title_activity_main">数字钱币库</string>
+    <string name="app_name">泉韵</string>
+    <string name="title_activity_main">泉韵</string>
     <string name="package_name">com.coinmuseum.qin</string>
     <string name="custom_url_scheme">com.coinmuseum.qin</string>
 </resources>
