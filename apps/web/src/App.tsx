@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import CompareBar from '@/components/CompareBar'
 import AmbientBackground from '@/components/AmbientBackground'
 import MusicPlayer from '@/components/MusicPlayer'
@@ -25,11 +25,33 @@ export default function App() {
   const navigate = useNavigate()
   const compareList = useCompareList()
   const { pathname } = useLocation()
+  // 彩蛋：站名连点计数（1.6 秒内连点 7 次进小游戏）
+  const nameTap = useRef({ n: 0, t: 0 })
 
   // 页面间滚动隔离：切到新页面从顶部开始，不继承上一页的滚动位置
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
   }, [pathname])
+
+  // 彩蛋：键盘 Konami 秘籍 ↑↑↓↓←→←→BA 进小游戏
+  useEffect(() => {
+    const seq = [
+      'ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown',
+      'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight',
+      'KeyB', 'KeyA',
+    ]
+    let pos = 0
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.code === seq[pos]) pos += 1
+      else pos = e.code === seq[0] ? 1 : 0
+      if (pos === seq.length) {
+        pos = 0
+        navigate('/game')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [navigate])
 
   return (
     <div className="min-h-dvh bg-page text-ink">
@@ -37,7 +59,23 @@ export default function App() {
       <header className="navbar">
         <nav className="container-page navbar-inner" aria-label="主导航">
           {/* 移动端：只留站名与搜索，导航交给底部 Tab 栏（6 个链接在 390px 下必然溢出） */}
-          <span className="mr-auto text-micro font-semibold md:hidden">数字钱币库</span>
+          <button
+            type="button"
+            className="mr-auto text-micro font-semibold md:hidden"
+            aria-label="数字钱币库"
+            onClick={() => {
+              const s = nameTap.current
+              const now = Date.now()
+              s.n = now - s.t < 1600 ? s.n + 1 : 1
+              s.t = now
+              if (s.n >= 7) {
+                s.n = 0
+                navigate('/game')
+              }
+            }}
+          >
+            数字钱币库
+          </button>
 
           <div className="hidden items-center gap-7 md:flex">
             {NAV.map((item) => (

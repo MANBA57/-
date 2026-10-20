@@ -11,9 +11,14 @@ import Search from '@/pages/Search'
 import About from '@/pages/About'
 import DesignTokens from '@/pages/DesignTokens'
 import NotFound from '@/pages/NotFound'
+import Game from '@/pages/Game'
 
-/** 路由表。9 个展示页 + 设计规范对照页。 */
+/** 路由表。9 个展示页 + 设计规范对照页 + 一个隐藏小游戏（免壳全屏）。 */
 export const router = createBrowserRouter([
+  {
+    path: '/game',
+    element: <Game />,
+  },
   {
     path: '/',
     element: <App />,

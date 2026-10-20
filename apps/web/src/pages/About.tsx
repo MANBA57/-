@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useStats } from '@/api/hooks'
 import { formatBytes, formatCount } from '@/lib/format'
 import { precacheAll, type PrecacheProgress } from '@/lib/pwa'
@@ -16,6 +16,7 @@ const TECH = [
 /** 关于页。给评委看的一页：作品定位、数据来源、技术栈、诚信说明。 */
 export default function About() {
   const stats = useStats()
+  const navigate = useNavigate()
   const [progress, setProgress] = useState<PrecacheProgress | null>(null)
   const [offlineState, setOfflineState] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
   const [offlineMsg, setOfflineMsg] = useState('')
@@ -171,6 +172,27 @@ export default function About() {
         <Link to="/evolution" className="btn btn-secondary">
           看体系演化
         </Link>
+      </div>
+
+      {/* 彩蛋：一枚像素铜钱，点一点有惊喜 */}
+      <div className="mt-14 flex justify-center">
+        <button
+          type="button"
+          aria-label="像素铜钱"
+          className="game-egg-coin"
+          onClick={() => navigate('/game')}
+        >
+          <svg width="26" height="26" viewBox="0 0 8 8" aria-hidden="true" shapeRendering="crispEdges">
+            <g fill="#b9bdc7">
+              <rect x="2" y="0" width="4" height="1" />
+              <rect x="1" y="1" width="6" height="1" />
+              <rect x="0" y="2" width="8" height="4" />
+              <rect x="1" y="6" width="6" height="1" />
+              <rect x="2" y="7" width="4" height="1" />
+            </g>
+            <rect x="3" y="3" width="2" height="2" fill="#f5f5f7" />
+          </svg>
+        </button>
       </div>
     </div>
   )

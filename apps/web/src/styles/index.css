@@ -466,3 +466,89 @@
     transition: none;
   }
 }
+
+/* ============================ 秘境寻泉（隐藏小游戏） ============================ */
+/* 游戏页是站内唯一的暗色像素世界；「零阴影零渐变」的站规在此页内刻意例外。 */
+
+.game-canvas {
+  image-rendering: pixelated;
+}
+
+.btn-game {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  background: #ffd23f;
+  color: #1b1c24;
+  font-weight: 600;
+  border-radius: 3px;
+  box-shadow: 0 3px 0 #8f7022;
+  transition: transform 0.06s ease;
+}
+.btn-game:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #8f7022;
+}
+
+.btn-game-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  background: transparent;
+  color: #c8cdd8;
+  font-weight: 500;
+  border: 1px solid #3a3d46;
+  border-radius: 3px;
+}
+.btn-game-ghost:hover {
+  border-color: #8a8f98;
+}
+
+.game-panel {
+  background: #17181f;
+  border: 1px solid #2c2e3a;
+  border-radius: 8px;
+}
+
+.game-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  background: #1d1e26;
+  border: 1px solid #2c2e3a;
+  border-radius: 4px;
+  color: #e6e8ee;
+  font-size: 14px;
+  line-height: 1.5;
+  transition: border-color 0.1s ease, background 0.1s ease;
+}
+.game-option:not(:disabled):hover {
+  border-color: #ffd23f;
+}
+.game-option-right {
+  background: rgba(110, 207, 125, 0.16);
+  border-color: #6ecf7d;
+}
+.game-option-wrong {
+  background: rgba(224, 69, 58, 0.16);
+  border-color: #e0453a;
+}
+
+.game-joystick {
+  touch-action: none;
+}
+
+/* 关于页底部的像素铜钱彩蛋入口 */
+.game-egg-coin {
+  display: inline-flex;
+  padding: 6px;
+  border-radius: 6px;
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
+}
+.game-egg-coin:hover {
+  opacity: 0.9;
+}
