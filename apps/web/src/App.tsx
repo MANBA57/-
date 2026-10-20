@@ -1,4 +1,5 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useEffect } from 'react'
 import CompareBar from '@/components/CompareBar'
 import AmbientBackground from '@/components/AmbientBackground'
 import MusicPlayer from '@/components/MusicPlayer'
@@ -23,6 +24,12 @@ const TABS = [
 export default function App() {
   const navigate = useNavigate()
   const compareList = useCompareList()
+  const { pathname } = useLocation()
+
+  // 页面间滚动隔离：切到新页面从顶部开始，不继承上一页的滚动位置
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
+  }, [pathname])
 
   return (
     <div className="min-h-dvh bg-page text-ink">

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useCoins, useFacets } from '@/api/hooks'
 import CoinCard from '@/components/CoinCard'
@@ -37,6 +37,11 @@ export default function Browse() {
   const q = params.get('q') ?? undefined
   const sort = (params.get('sort') as SortValue | null) ?? 'order'
   const page = Math.max(1, Number(params.get('page') ?? '1') || 1)
+
+  // 分页与滚动的隔离：翻到新一页从顶部开始看，不留在上一页的滚动位置
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
+  }, [page])
 
   const query = { ...filters, q, sort, page, page_size: 12 }
   const coins = useCoins(query)

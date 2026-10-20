@@ -425,7 +425,19 @@
 }
 
 /* 横滑货架隐藏滚动条（apple.com 的 shelf 一律不露滚动条） */
-.no-scrollbar {
+  /* ---------- 滚动隔离 ---------- */
+  /* 页面不产生 overscroll 光晕/下拉回弹，也不向内层滚动链传导；
+     横向滚动条到达边界即停，不把横向动量甩给页面 */
+  html,
+  body {
+    overscroll-behavior-y: none;
+  }
+  .no-scrollbar,
+  .overflow-x-auto {
+    overscroll-behavior-x: contain;
+  }
+
+  .no-scrollbar {
   scrollbar-width: none;
 }
 .no-scrollbar::-webkit-scrollbar {
