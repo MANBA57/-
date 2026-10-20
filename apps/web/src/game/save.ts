@@ -6,8 +6,16 @@
 const BEST_KEY = 'coinmuseum:game-best'
 const COLLECTION_KEY = 'coinmuseum:game-collection'
 const SFX_KEY = 'coinmuseum:game-sfx'
+const RUN_KEY = 'coinmuseum:game-run'
 
 const isBrowser = typeof window !== 'undefined' && typeof localStorage !== 'undefined'
+
+/** 进行中的单局状态：续玩时恢复武器与血量上限（与死亡重试保留武器的规则一致）。 */
+export interface RunState {
+  level: number
+  maxHp: number
+  weapon: { dmg: number; interval: number; pierce: number; projectiles: number; upgrades: number }
+}
 
 export function loadBest(): number {
   if (!isBrowser) return 0
@@ -66,6 +74,43 @@ export function saveSfx(on: boolean): void {
   if (!isBrowser) return
   try {
     localStorage.setItem(SFX_KEY, on ? 'on' : 'off')
+  } catch {
+    /* 忽略 */
+  }
+}
+
+export function loadRun(): RunState | null {
+  if (!isBrowser) return null
+  try {
+    const raw = localStorage.getItem(RUN_KEY)
+    if (!raw) return null
+    const r = JSON.parse(raw) as RunState
+    if (
+      typeof r !== 'object' || r === null ||
+      typeof r.level !== 'number' || typeof r.maxHp !== 'number' ||
+      typeof r.weapon?.dmg !== 'number' || typeof r.weapon?.interval !== 'number' ||
+      typeof r.weapon?.pierce !== 'number' || typeof r.weapon?.projectiles !== 'number' ||
+      typeof r.weapon?.upgrades !== 'number'
+    ) return null
+    return r
+  } catch {
+    return null
+  }
+}
+
+export function saveRun(run: RunState): void {
+  if (!isBrowser) return
+  try {
+    localStorage.setItem(RUN_KEY, JSON.stringify(run))
+  } catch {
+    /* 忽略 */
+  }
+}
+
+export function clearRun(): void {
+  if (!isBrowser) return
+  try {
+    localStorage.removeItem(RUN_KEY)
   } catch {
     /* 忽略 */
   }

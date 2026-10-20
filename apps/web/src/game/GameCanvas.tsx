@@ -8,7 +8,18 @@ import { Game, VIEW_W, VIEW_H } from './game'
 import { LEVELS, UPGRADE_CYCLE, UPGRADE_LABEL } from './data/levels'
 import { CHEST_COINS, type ChestCoin } from './data/coins'
 import { QUESTIONS, type QuizQuestion } from './data/questions'
-import { loadBest, loadCollection, addCollection, saveBest, loadSfx, saveSfx } from './save'
+import {
+  loadBest,
+  loadCollection,
+  addCollection,
+  saveBest,
+  loadSfx,
+  saveSfx,
+  loadRun,
+  saveRun,
+  clearRun,
+  type RunState,
+} from './save'
 
 interface Props {
   startLevel?: number
@@ -33,13 +44,15 @@ export default function GameCanvas({ startLevel = 0, onExit }: Props) {
   const [phase, setPhase] = useState<'title' | 'run'>('title')
   const [runLevel, setRunLevel] = useState(startLevel)
   const [runKey, setRunKey] = useState(0)
+  const [carry, setCarry] = useState<RunState | null>(null)
 
   if (phase === 'title') {
     return (
       <TitleScreen
         startLevel={startLevel}
-        onStart={(lv) => {
+        onStart={(lv, c) => {
           setRunLevel(lv)
+          setCarry(c ?? null)
           setRunKey((k) => k + 1)
           setPhase('run')
         }}
@@ -51,10 +64,18 @@ export default function GameCanvas({ startLevel = 0, onExit }: Props) {
     <GameStage
       key={runKey}
       startLevel={runLevel}
+      carry={carry}
       onExit={onExit}
       onBackTitle={() => {
         setPhase('title')
         setRunLevel(startLevel)
+        setCarry(null)
+      }}
+      onRestart={() => {
+        clearRun()
+        setRunLevel(0)
+        setCarry(null)
+        setRunKey((k) => k + 1)
       }}
     />
   )
@@ -68,7 +89,7 @@ function TitleScreen({
   onExit,
 }: {
   startLevel?: number
-  onStart: (level: number) => void
+  onStart: (level: number, carry?: RunState | null) => void
   onExit: () => void
 }) {
   const best = loadBest()
@@ -90,12 +111,22 @@ function TitleScreen({
             <button
               type="button"
               className="btn-game px-8 py-2 text-body"
-              onClick={() => onStart(Math.min(best, 6))}
+              onClick={() => {
+                const run = loadRun()
+                onStart(Math.min(best, 6), run && run.level === best ? run : null)
+              }}
             >
               继续 · 第 {best + 1} 关 {LEVELS[best]?.era}
             </button>
           ) : null}
-          <button type="button" className="btn-game px-8 py-2 text-body" onClick={() => onStart(startLevel)}>
+          <button
+            type="button"
+            className="btn-game px-8 py-2 text-body"
+            onClick={() => {
+              clearRun()
+              onStart(startLevel)
+            }}
+          >
             {best > 0 ? '从头开始' : '开始探索'}
           </button>
         </div>
@@ -113,12 +144,16 @@ function TitleScreen({
 
 function GameStage({
   startLevel,
+  carry,
   onExit,
   onBackTitle,
+  onRestart,
 }: {
   startLevel: number
+  carry?: RunState | null
   onExit: () => void
   onBackTitle: () => void
+  onRestart: () => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const gameRef = useRef<Game | null>(null)
@@ -164,11 +199,21 @@ function GameStage({
         },
         onLevelClear: (levelIdx) => {
           saveBest(levelIdx + 1)
+          const gg = gameRef.current
+          if (gg) {
+            // 续玩存档：下一关的血量上限（与 nextLevel 的 +1 规则一致）+ 当前武器
+            saveRun({
+              level: levelIdx + 1,
+              maxHp: Math.min(8, gg.player.maxHp + 1),
+              weapon: { ...gg.weapon },
+            })
+          }
           setClearLevel(levelIdx)
           setPhase('clear')
         },
         onVictory: () => {
           saveBest(7)
+          clearRun()
           setCollectedCount(loadCollection().length)
           setPhase('victory')
         },
@@ -178,6 +223,12 @@ function GameStage({
       startLevel,
     )
     gameRef.current = game
+    // 续玩：恢复上次的武器与血量上限（与死亡重试保留武器的规则一致）
+    if (carry) {
+      game.weapon = { ...carry.weapon }
+      game.player.maxHp = carry.maxHp
+      game.player.hp = carry.maxHp
+    }
     game.sfx.muted = !sfxOn
     game.start()
 
@@ -392,7 +443,7 @@ function GameStage({
             {collectedCount < 42 ? '——去博物馆页面补完图鉴吧' : '，全部集齐！'}。
           </p>
           <div className="flex gap-2">
-            <button type="button" className="btn-game px-8 py-2" onClick={onBackTitle}>
+            <button type="button" className="btn-game px-8 py-2" onClick={onRestart}>
               再来一局
             </button>
             <button type="button" className="btn-game-ghost px-8 py-2" onClick={onExit}>

@@ -166,7 +166,7 @@ export class Game {
   /** 大厅左/右/上三门各自通往的战斗房（小地图用） */
   private sideRoom: Record<'L' | 'R' | 'T', string> = { L: '', R: '', T: '' }
 
-  private player = {
+  player = {
     x: 240,
     y: 128,
     r: 5,
@@ -241,6 +241,10 @@ export class Game {
     this.input.destroy()
     this.sfx.destroy()
     this.canvas.removeEventListener('pointerdown', this.firstGesture)
+    if (import.meta.env.DEV) {
+      const w = window as unknown as { __game?: Game }
+      if (w.__game === this) w.__game = undefined
+    }
   }
 
   pause(): void {
