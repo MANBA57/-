@@ -21,7 +21,7 @@ const ROOM_H_PX = ROOM_TH * TILE // 256
 const HUD_Y = ROOM_H_PX // HUD 条起始 y
 
 /** 能量自然回复（点/秒），强化可乘 regenMul */
-const ENERGY_REGEN = 10
+const ENERGY_REGEN = 7
 
 const fmtNum = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(1))
 
