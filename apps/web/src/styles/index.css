@@ -264,6 +264,21 @@
     opacity: 1;
   }
 
+  /* 小游戏入口：站点唯一高饱和色描边胶囊，悬停/当前页实底 */
+  .navbar-link-game {
+    color: var(--color-accent);
+    border: 1px solid var(--color-accent);
+    border-radius: 999px;
+    padding: 3px 12px;
+    opacity: 1;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .navbar-link-game:hover,
+  .navbar-link-game[aria-current='page'] {
+    background: var(--color-accent);
+    color: #fff;
+  }
+
   /* ---------- 移动端底部 Tab 栏：毛玻璃 + 顶部发丝线 ---------- */
   .tabbar {
     position: fixed;

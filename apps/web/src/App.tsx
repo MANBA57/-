@@ -5,12 +5,13 @@ import AmbientBackground from '@/components/AmbientBackground'
 import MusicPlayer from '@/components/MusicPlayer'
 import { useCompareList } from '@/lib/compare'
 
-const NAV = [
+const NAV: { to: string; label: string; end?: boolean; highlight?: boolean }[] = [
   { to: '/', label: '首页', end: true },
   { to: '/coins', label: '钱币库' },
   { to: '/timeline', label: '时间轴' },
   { to: '/evolution', label: '体系演化' },
   { to: '/terms', label: '术语' },
+  { to: '/game', label: '🎮 小游戏', highlight: true },
   { to: '/about', label: '关于' },
 ]
 
@@ -19,6 +20,7 @@ const TABS = [
   { to: '/coins', label: '钱币库', icon: 'M4 5h16v14H4zM4 10h16' },
   { to: '/timeline', label: '时间轴', icon: 'M3 12h18M7 8v8M12 6v12M17 8v8' },
   { to: '/terms', label: '词典', icon: 'M5 4h9a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3zM17 7h2v13H8' },
+  { to: '/game', label: '小游戏', icon: 'M12 21v-8m0 0a4 4 0 1 1 0-8 4 4 0 0 1 0 8zM6 21h12' },
 ]
 
 export default function App() {
@@ -79,7 +81,12 @@ export default function App() {
 
           <div className="hidden items-center gap-7 md:flex">
             {NAV.map((item) => (
-              <NavLink key={item.to} to={item.to} end={item.end} className="navbar-link">
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                className={item.highlight ? 'navbar-link navbar-link-game' : 'navbar-link'}
+              >
                 {item.label}
               </NavLink>
             ))}

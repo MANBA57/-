@@ -120,6 +120,10 @@ interface Bullet {
   blastE?: number
   /** homing 每秒转向（rad） */
   turn?: number
+  /** 已对 BOSS 结算过（防穿透弹帧帧重复伤害） */
+  bossHit?: boolean
+  /** 近战判定体：触碰可消除敌方子弹 */
+  melee?: boolean
 }
 
 interface Pickup {
@@ -798,18 +802,18 @@ export class Game {
       if (this.input.firing() && p.energy > 1) {
         this.orbitOn = true
         p.energy = Math.max(0, p.energy - def.cost * dt)
-        this.orbitAngle += dt * 5.2
+        this.orbitAngle += dt * 7
         this.orbitTick -= dt
         if (this.orbitTick <= 0) {
-          this.orbitTick = 0.22
-          for (let k = 0; k < 3; k++) {
-            const a = this.orbitAngle + (k / 3) * Math.PI * 2
+          this.orbitTick = 0.15
+          for (let k = 0; k < 4; k++) {
+            const a = this.orbitAngle + (k / 4) * Math.PI * 2
             this.bullets.push({
-              x: p.x + Math.cos(a) * 26,
-              y: p.y + Math.sin(a) * 26,
+              x: p.x + Math.cos(a) * 33,
+              y: p.y + Math.sin(a) * 33,
               vx: 0,
               vy: 0,
-              r: 8,
+              r: 9,
               dmg: this.weapon.dmg * def.dmgMul,
               pierce: 99,
               friendly: true,
@@ -817,6 +821,7 @@ export class Game {
               spin: a,
               t: 0,
               hidden: true,
+              melee: true,
               hit: new Set(),
             })
           }
@@ -939,29 +944,30 @@ export class Game {
         break
       }
       case 'slash': {
-        // 三道弧光扇形斩
+        // 三道弧光扇形斩（判定体更大更远，可劈碎敌弹）
         for (const off of [-0.5, 0, 0.5]) {
           const a = a0 + off
           this.bullets.push({
-            x: p.x + Math.cos(a) * 20,
-            y: p.y + Math.sin(a) * 20,
-            vx: Math.cos(a) * 60,
-            vy: Math.sin(a) * 60,
-            r: 9,
+            x: p.x + Math.cos(a) * 27,
+            y: p.y + Math.sin(a) * 27,
+            vx: Math.cos(a) * 85,
+            vy: Math.sin(a) * 85,
+            r: 11,
             dmg: this.weapon.dmg * def.dmgMul,
             pierce: 99,
             friendly: true,
-            life: 0.16,
+            life: 0.2,
             spin: a + Math.PI / 2,
             t: 0,
             sprite: 'slash',
             spinRate: 0,
             trailC: def.trail,
+            melee: true,
             hit: new Set(),
           })
         }
         this.sfx.play('select')
-        this.particles.burst(p.x + Math.cos(a0) * 22, p.y + Math.sin(a0) * 22, '#f5f5f7', 6, 70, 0.25)
+        this.particles.burst(p.x + Math.cos(a0) * 30, p.y + Math.sin(a0) * 30, '#f5f5f7', 8, 80, 0.28)
         break
       }
       case 'slam': {
@@ -986,6 +992,16 @@ export class Game {
         const boss = this.boss
         if (boss && !boss.dead && boss.spawnT <= 0 && dist(p.x, p.y, boss.x, boss.y) < radius + boss.r) {
           this.damageBoss(dmg, false)
+        }
+        // 震波消弹：范围内敌方弹丸全部震碎（自爆弹不触发爆炸）
+        for (const eb of this.bullets) {
+          if (eb.friendly || eb.life <= 0) continue
+          if (eb.z !== undefined && eb.z > 6) continue
+          if (dist(p.x, p.y, eb.x, eb.y) < radius + eb.r) {
+            eb.blastE = undefined
+            eb.life = 0
+            this.particles.burst(eb.x, eb.y, '#f5f5f7', 3, 46, 0.22)
+          }
         }
         break
       }
@@ -2245,17 +2261,30 @@ export class Game {
             break
           }
         }
-        // 打 BOSS
+        // 打 BOSS（每颗弹对 BOSS 只结算一次——近战穿透弹帧帧命中会一刀秒）
         const boss = this.boss
-        if (boss && !boss.dead && boss.spawnT <= 0 && b.life > 0 && lowFlight) {
+        if (boss && !boss.dead && boss.spawnT <= 0 && b.life > 0 && lowFlight && !b.bossHit) {
           if (dist(b.x, b.y, boss.x, boss.y) < b.r + boss.r) {
             const crit = this.rng.next() < this.weapon.crit
             const dmg = b.dmg * (crit ? 2 : 1)
+            b.bossHit = true
             this.sfx.play('hit')
             if (crit) this.particles.burst(b.x, b.y, '#ffffff', 8, 90, 0.35)
             if (!b.blast) this.damageBoss(dmg, crit)
             if (b.pierce > 0 && !b.blast) b.pierce -= 1
             else b.life = 0
+          }
+        }
+        // 近战消弹：斩击 / 环绕刀劈碎触碰到的敌方弹丸（自爆弹被劈碎不爆炸）
+        if (b.melee) {
+          for (const eb of this.bullets) {
+            if (eb.friendly || eb.life <= 0) continue
+            if (eb.z !== undefined && eb.z > 6) continue
+            if (dist(b.x, b.y, eb.x, eb.y) < b.r + eb.r + 2) {
+              eb.blastE = undefined
+              eb.life = 0
+              this.particles.burst(eb.x, eb.y, '#f5f5f7', 3, 46, 0.22)
+            }
           }
         }
       } else if (p.iframe <= 0 && dist(b.x, b.y, p.x, p.y) < b.r + p.r - 1) {
@@ -2905,10 +2934,10 @@ export class Game {
     const ctx = this.ctx
     const p = this.player
     const spr = spriteCanvas('orbitBlade', this.levelIdx)
-    for (let k = 0; k < 3; k++) {
-      const a = this.orbitAngle + (k / 3) * Math.PI * 2
-      const x = p.x + Math.cos(a) * 26
-      const y = p.y + Math.sin(a) * 26
+    for (let k = 0; k < 4; k++) {
+      const a = this.orbitAngle + (k / 4) * Math.PI * 2
+      const x = p.x + Math.cos(a) * 33
+      const y = p.y + Math.sin(a) * 33
       ctx.save()
       ctx.translate(Math.round(x), Math.round(y))
       ctx.rotate(this.orbitAngle * 3 + k * 2)
@@ -2935,7 +2964,12 @@ export class Game {
       ctx.save()
       ctx.translate(Math.round(b.x), Math.round(b.y + dy))
       ctx.rotate(b.spin)
-      ctx.drawImage(spr, -spr.width / 2, -spr.height / 2)
+      if (b.sprite === 'slash') {
+        // 斩击弧光随判定体放大
+        ctx.drawImage(spr, -spr.width * 0.675, -spr.height * 0.675, spr.width * 1.35, spr.height * 1.35)
+      } else {
+        ctx.drawImage(spr, -spr.width / 2, -spr.height / 2)
+      }
       ctx.restore()
       if (b.friendly && !REDUCED_MOTION && Math.random() < 0.3) {
         this.particles.trail(b.x, b.y + dy, b.trailC ?? 'rgba(255,210,63,0.5)')
