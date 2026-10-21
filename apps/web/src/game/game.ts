@@ -21,7 +21,7 @@ const ROOM_H_PX = ROOM_TH * TILE // 256
 const HUD_Y = ROOM_H_PX // HUD 条起始 y
 
 /** 能量自然回复（点/秒），强化可乘 regenMul */
-const ENERGY_REGEN = 20
+const ENERGY_REGEN = 10
 
 const fmtNum = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(1))
 
@@ -116,6 +116,8 @@ interface Bullet {
   returning?: boolean
   /** 剩余反弹次数（BOSS 飞轮） */
   bounce?: number
+  /** 敌方爆炸弹（自爆飞轮等）：消亡时对玩家方爆炸半径 */
+  blastE?: number
   /** homing 每秒转向（rad） */
   turn?: number
 }
@@ -203,6 +205,7 @@ const ARCH_BASE: Record<Arch, { hp: number; spd: number; r: number }> = {
   dash: { hp: 4, spd: 58, r: 6 },
   roll: { hp: 5, spd: 120, r: 7 },
   tank: { hp: 10, spd: 26, r: 8 },
+  bomb: { hp: 4, spd: 46, r: 6 },
 }
 
 const REDUCED_MOTION =
@@ -262,6 +265,12 @@ export class Game {
   private bullets: Bullet[] = []
   private pickups: Pickup[] = []
   private floats: FloatText[] = []
+  /** 爆炸扩散冲击环 */
+  private boomRings: { x: number; y: number; max: number; t: number }[] = []
+  /** 地面焦痕（渐隐） */
+  private scorches: { x: number; y: number; r: number; life: number }[] = []
+  /** 预警圈：倒计时归零时按 dmg 爆炸（0 = 纯视觉） */
+  private hazards: { x: number; y: number; r: number; t: number; t0: number; dmg: number }[] = []
   private boss: Boss | null = null
   private nextId = 1
 
@@ -531,6 +540,8 @@ export class Game {
     this.bullets = []
     this.enemies = []
     this.pickups = []
+    this.hazards = []
+    this.boomRings = []
     this.orbitOn = false
     this.burstLeft = 0
 
@@ -630,6 +641,7 @@ export class Game {
 
     if (this.fade < 0.9) this.updatePlayer(dt)
     this.updateEnemies(dt)
+    this.updateBoom(dt)
     this.updateBoss(dt)
     this.updateBullets(dt)
     this.updatePickups(dt)
@@ -1133,6 +1145,33 @@ export class Game {
           }
           break
         }
+        case 'bomb': {
+          if (e.state === 0) {
+            // 竹钱妖追击
+            this.moveCircle(e, ux * e.spd * dt, uy * e.spd * dt, false)
+            e.faceLeft = ux < 0
+            if (d < 26) {
+              e.state = 1
+              e.t = 0.8
+              this.sfx.play('select')
+            }
+          } else if (e.state === 1) {
+            // 引信倒计时：减速逼近 + 火星 + 加速闪烁
+            this.moveCircle(e, ux * e.spd * 0.45 * dt, uy * e.spd * 0.45 * dt, false)
+            e.t -= dt
+            if (!REDUCED_MOTION && Math.random() < 0.35) {
+              this.particles.trail(e.x + (Math.random() - 0.5) * 4, e.y - e.r - 4, '#ffd23f')
+            }
+            if (e.t <= 0) {
+              // 引信烧尽：大爆（伤玩家 + 波及小怪）
+              e.state = 2
+              e.hp = 0
+              this.blastEnemy(e.x, e.y, 26, 2)
+              this.enemyDie(e)
+            }
+          }
+          break
+        }
       }
 
       // 接触伤害
@@ -1236,6 +1275,10 @@ export class Game {
     this.particles.burst(e.x, e.y, ERA_PALETTES[this.levelIdx]!.tint, 12, 90, 0.5)
     this.particles.burst(e.x, e.y, '#ffd23f', 6, 70, 0.45)
     this.sfx.play('enemyDie')
+    // 竹钱妖被提前击杀：小爆只伤小怪（不伤玩家），可连锁
+    if (e.arch === 'bomb' && e.state !== 2) {
+      this.blastEnemy(e.x, e.y, 16, 1.5, false)
+    }
     const wantHeart = p.hp < p.maxHp
     if (e.elite) {
       if (wantHeart) this.pickups.push({ x: e.x - 5, y: e.y, t: 0, type: 'heart' })
@@ -1252,12 +1295,56 @@ export class Game {
     this.floats.push({ x, y, text, t: 0, color, size })
   }
 
+  /** 爆炸视觉：闪芯 + 大火花 + 余烬 + 烟雾 + 冲击环 + 地面焦痕。 */
+  private boomFx(x: number, y: number, r: number): void {
+    this.sfx.play('explode')
+    this.shake = REDUCED_MOTION ? 0 : Math.min(1.8, r / 26)
+    this.particles.burst(x, y, '#ffffff', 8, r * 3.5, 0.22, 3)
+    this.particles.burst(x, y, '#ffd23f', 16, r * 4.5, 0.5, 3)
+    this.particles.burst(x, y, '#ff7840', 14, r * 3, 0.55, 3)
+    if (!REDUCED_MOTION) {
+      // 烟雾缓慢上浮
+      for (let i = 0; i < 6; i++) {
+        this.particles.list.push({
+          x: x + (this.rng.next() - 0.5) * r * 0.8,
+          y: y + (this.rng.next() - 0.5) * r * 0.5,
+          vx: (this.rng.next() - 0.5) * 14,
+          vy: -18 - this.rng.next() * 16,
+          life: 0.9,
+          max: 0.9,
+          color: '#565663',
+          size: this.rng.next() < 0.5 ? 3 : 4,
+          gravity: 0,
+        })
+      }
+      this.boomRings.push({ x, y, max: r * 1.5, t: 0 })
+    }
+    this.scorches.push({ x, y, r, life: 5 })
+    if (this.scorches.length > 30) this.scorches.shift()
+  }
+
+  /** 敌方爆炸：伤玩家（可选）+ 波及小怪，可连锁。 */
+  private blastEnemy(x: number, y: number, r: number, dmg: number, hurtPlayer = true): void {
+    this.boomFx(x, y, r)
+    const p = this.player
+    if (hurtPlayer && p.iframe <= 0 && dist(x, y, p.x, p.y) < r + p.r) {
+      const dd = dist(x, y, p.x, p.y) || 1
+      this.hurtPlayer((p.x - x) / dd, (p.y - y) / dd)
+    }
+    for (const e of this.enemies) {
+      if (e.spawnT > 0 || e.hp <= 0) continue
+      if (dist(x, y, e.x, e.y) < r + e.r) {
+        e.hp -= dmg
+        e.flash = 0.15
+        this.addFloat(e.x, e.y - e.r - 2, fmtNum(dmg), '#ffb066', 8)
+        if (e.hp <= 0) this.enemyDie(e)
+      }
+    }
+  }
+
   /** 爆炸：范围伤害（可选击退）+ 双色粒子 + 震屏。 */
   private explode(x: number, y: number, radius: number, dmg: number, knock = false): void {
-    this.sfx.play('explode')
-    this.shake = REDUCED_MOTION ? 0 : Math.min(1.5, radius / 28)
-    this.particles.burst(x, y, '#ffd23f', 10, radius * 4, 0.4)
-    this.particles.burst(x, y, '#ff7840', 12, radius * 3, 0.55)
+    this.boomFx(x, y, radius)
     for (const e of this.enemies) {
       if (e.spawnT > 0) continue
       if (dist(x, y, e.x, e.y) < radius + e.r) {
@@ -1364,11 +1451,11 @@ export class Game {
       this.moveCircle(b, ux * drift * dt, uy * drift * dt, false)
       if (b.patternT <= 0) {
         const pools: Record<BossId, number[]> = {
-          zhushen: b.phase === 2 ? [1, 2, 3, 1, 3] : [1, 2, 3],
-          shengshou: b.phase === 2 ? [1, 2, 3, 1] : [1, 2, 3],
-          zhimo: b.phase === 2 ? [1, 2, 3, 2] : [1, 2, 3],
+          zhushen: b.phase === 2 ? [1, 2, 3, 4, 3] : [1, 2, 3, 4],
+          shengshou: b.phase === 2 ? [1, 2, 3, 4, 1] : [1, 2, 3, 4],
+          zhimo: b.phase === 2 ? [1, 2, 3, 4, 2] : [1, 2, 3, 4],
           qianwang:
-            b.phase === 3 ? [1, 2, 3, 4, 5] : b.phase === 2 ? [1, 2, 3, 4] : [1, 2, 3],
+            b.phase === 3 ? [1, 2, 3, 4, 5, 6, 7] : b.phase === 2 ? [1, 2, 3, 4, 6] : [1, 2, 3],
         }
         const pool = pools[b.id]
         b.pattern = pool[this.rng.int(0, pool.length - 1)]!
@@ -1377,7 +1464,10 @@ export class Game {
         b.patternT = 0
         // 带预警的技能给前摇时间
         if (b.id === 'zhushen' && b.pattern === 3) b.patternT = 0.75
+        if (b.id === 'zhushen' && b.pattern === 4) b.patternT = 0.55
         if (b.id === 'shengshou' && b.pattern === 3) b.patternT = 0.4
+        if (b.id === 'zhimo' && b.pattern === 4) b.patternT = 0.9
+        if (b.id === 'qianwang' && b.pattern === 7) b.patternT = 0.9
       }
       return
     }
@@ -1448,6 +1538,47 @@ export class Game {
               b.patternT = 1.4
             }
           }
+        } else if (b.pattern === 4) {
+          // 范锤砸击：锁定落点红圈预警 → 冲刺砸地 AOE + 环形冲击弹
+          if (b.step === 0) {
+            if (b.fireT === 0) {
+              b.aimX = p.x
+              b.aimY = p.y
+              b.fireT = 1
+              this.hazards.push({ x: p.x, y: p.y, r: 28, t: 0.55, t0: 0.55, dmg: 0 })
+              this.banner = { text: '铸神举范——砸！', t: 1.2 }
+            }
+            if (b.patternT <= 0) {
+              b.step = 1
+              b.patternT = 0.4
+              const dd = dist(b.x, b.y, b.aimX, b.aimY) || 1
+              b.dirX = (b.aimX - b.x) / dd
+              b.dirY = (b.aimY - b.y) / dd
+              this.sfx.play('boss')
+            }
+          } else if (b.step === 1) {
+            const remain = Math.max(b.patternT, 0.06)
+            const spd = Math.max(240, Math.min(560, dist(b.x, b.y, b.aimX, b.aimY) / remain))
+            b.x = clamp(b.x + b.dirX * spd * dt, 24, VIEW_W - 24)
+            b.y = clamp(b.y + b.dirY * spd * dt, 24, ROOM_H_PX - 24)
+            if (!REDUCED_MOTION && Math.random() < 0.7) {
+              this.particles.trail(b.x, b.y + 6, '#c8971e')
+            }
+            if (b.patternT <= 0) {
+              // 落地：AOE 震荡 + 环形冲击弹
+              b.x = clamp(b.aimX, 24, VIEW_W - 24)
+              b.y = clamp(b.aimY, 24, ROOM_H_PX - 24)
+              this.blastEnemy(b.x, b.y, 30, 2)
+              for (let k = 0; k < 10; k++) {
+                this.bullets.push(this.enemyShot(b.x, b.y, (k / 10) * Math.PI * 2, 70, 2.5, { life: 3 }))
+              }
+              b.dirX = 0
+              b.dirY = 0
+              b.fireT = 0
+              b.pattern = 0
+              b.patternT = 1.6
+            }
+          }
         }
         break
       }
@@ -1512,6 +1643,31 @@ export class Game {
               b.pattern = 0
               b.patternT = 1.2
             }
+          }
+        } else if (b.pattern === 4) {
+          // 飞轮过载：慢速自爆轮（寿命尽/反弹耗尽/命中玩家时爆炸）
+          if (b.patternT <= 0 && b.step === 0) {
+            const n = b.phase === 2 ? 3 : 2
+            const base = Math.atan2(p.y - b.y, p.x - b.x)
+            for (let k = 0; k < n; k++) {
+              this.bullets.push(
+                this.enemyShot(b.x, b.y, base + (k - (n - 1) / 2) * 0.55, 64, 5, {
+                  life: 3.2,
+                  kind: 'wheel',
+                  bounce: 4,
+                  sprite: 'roll',
+                  blastE: 20,
+                  trailC: '#e0453a',
+                }),
+              )
+            }
+            this.banner = { text: '飞轮过载——自爆轮出闸！', t: 1.4 }
+            this.sfx.play('hit')
+            b.step = 1
+            b.patternT = 1.9
+          } else if (b.patternT <= 0) {
+            b.pattern = 0
+            b.patternT = 1.2
           }
         }
         break
@@ -1582,6 +1738,40 @@ export class Game {
           } else if (b.patternT <= 0) {
             b.pattern = 0
             b.patternT = 1.3
+          }
+        } else if (b.pattern === 4) {
+          // 幽魂凝视：粗激光预警 → 宽光束缓慢扫摆（±0.5rad）
+          if (b.step === 0) {
+            if (b.fireT === 0) {
+              const a0 = Math.atan2(p.y - b.y, p.x - b.x)
+              b.aimX = Math.cos(a0)
+              b.aimY = Math.sin(a0)
+              b.angle = a0
+              b.fireT = 1
+              this.banner = { text: '纸魔凝视——幽光将扫过！', t: 1.4 }
+            }
+            if (b.patternT <= 0) {
+              b.step = 1
+              b.patternT = 1.4
+              this.sfx.play('boss')
+              this.shake = REDUCED_MOTION ? 0 : 0.35
+            }
+          } else {
+            const a = b.angle + Math.sin(this.time * 2.4) * 0.5
+            const dx = Math.cos(a)
+            const dy = Math.sin(a)
+            if (p.iframe <= 0 && this.distToRay(p.x, p.y, b.x, b.y, dx, dy, 340) < 7) {
+              this.hurtPlayer(dx, dy)
+            }
+            if (!REDUCED_MOTION && Math.random() < 0.7) {
+              const len = this.rng.range(20, 330)
+              this.particles.burst(b.x + dx * len, b.y + dy * len, '#a78bfa', 1, 34, 0.3)
+            }
+            if (b.patternT <= 0) {
+              b.fireT = 0
+              b.pattern = 0
+              b.patternT = 1.4
+            }
           }
         }
         break
@@ -1696,6 +1886,58 @@ export class Game {
             }
             break
           }
+          case 6: { // 当百炮轰：玩家附近三处预警 → 依次大爆
+            if (b.step === 0) {
+              this.banner = { text: '当百炮轰——避开盘口！', t: 1.4 }
+              for (let k = 0; k < 3; k++) {
+                const hx = clamp(p.x + this.rng.range(-42, 42), 30, VIEW_W - 30)
+                const hy = clamp(p.y + this.rng.range(-32, 32), 26, ROOM_H_PX - 26)
+                this.hazards.push({ x: hx, y: hy, r: 30, t: 0.7 + k * 0.28, t0: 0.98, dmg: 2 })
+              }
+              this.sfx.play('boss')
+              b.step = 1
+              b.patternT = 2.1
+            } else if (b.patternT <= 0) {
+              b.pattern = 0
+              b.patternT = 1.3
+            }
+            break
+          }
+          case 7: { // 帝瞳金光：粗激光缓慢横扫（仅三阶段）
+            if (b.step === 0) {
+              if (b.fireT === 0) {
+                const a0 = Math.atan2(p.y - b.y, p.x - b.x)
+                b.aimX = Math.cos(a0)
+                b.aimY = Math.sin(a0)
+                b.angle = a0
+                b.fireT = 1
+                this.banner = { text: '帝瞳金光——横扫千军！', t: 1.4 }
+              }
+              if (b.patternT <= 0) {
+                b.step = 1
+                b.patternT = 2.0
+                this.sfx.play('boss')
+                this.shake = REDUCED_MOTION ? 0 : 0.4
+              }
+            } else {
+              const a = b.angle + Math.sin(this.time * 1.5) * 0.8
+              const dx = Math.cos(a)
+              const dy = Math.sin(a)
+              if (p.iframe <= 0 && this.distToRay(p.x, p.y, b.x, b.y, dx, dy, 360) < 8) {
+                this.hurtPlayer(dx, dy)
+              }
+              if (!REDUCED_MOTION && Math.random() < 0.8) {
+                const len = this.rng.range(20, 350)
+                this.particles.burst(b.x + dx * len, b.y + dy * len, '#ffd23f', 1, 36, 0.3)
+              }
+              if (b.patternT <= 0) {
+                b.fireT = 0
+                b.pattern = 0
+                b.patternT = 1.5
+              }
+            }
+            break
+          }
         }
         break
       }
@@ -1739,6 +1981,19 @@ export class Game {
   }
 
   /* ------------------------------------------------------------ 弹丸与掉落 */
+
+  /** 爆炸余波：冲击环扩散 / 焦痕渐隐 / 预警圈倒计时引爆。 */
+  private updateBoom(dt: number): void {
+    for (const r of this.boomRings) r.t += dt
+    this.boomRings = this.boomRings.filter((r) => r.t < 0.35)
+    for (const s of this.scorches) s.life -= dt
+    this.scorches = this.scorches.filter((s) => s.life > 0)
+    for (const h of this.hazards) {
+      h.t -= dt
+      if (h.t <= 0 && h.dmg > 0) this.blastEnemy(h.x, h.y, h.r, h.dmg)
+    }
+    this.hazards = this.hazards.filter((h) => h.t > 0)
+  }
 
   private updateBullets(dt: number): void {
     const room = this.current!
@@ -1859,6 +2114,8 @@ export class Game {
     // 玩家爆炸弹消亡时统一爆一次（命中 / 撞墙 / 落地 / 到时）
     for (const b of this.bullets) {
       if (b.life <= 0 && b.friendly && b.blast) this.explode(b.x, b.y, b.blast, b.dmg)
+      // 敌方自爆弹（过载飞轮）：消亡时对玩家方爆炸
+      if (b.life <= 0 && !b.friendly && b.blastE) this.blastEnemy(b.x, b.y, b.blastE, 2)
     }
     this.bullets = this.bullets.filter((b) => b.life > 0)
   }
@@ -2082,7 +2339,9 @@ export class Game {
     ctx.translate(Math.round(shakeX), Math.round(shakeY))
 
     this.drawRoomBg(room)
+    this.drawScorches()
     this.drawDoors(room)
+    this.drawHazards()
     if (room.portal) this.drawPortal(room.portal)
     if (room.chest) this.drawChest(room.chest)
     this.drawPickups()
@@ -2092,6 +2351,7 @@ export class Game {
     this.drawOrbit()
     this.drawBullets()
     this.particles.draw(ctx)
+    this.drawBoomRings()
     this.drawFloats()
     ctx.restore()
 
@@ -2185,6 +2445,62 @@ export class Game {
     ctx.drawImage(spriteCanvas(name, this.levelIdx), Math.round(chest.x - 8), Math.round(chest.y - 6))
   }
 
+  /** 地面焦痕：三片偏移暗斑，末段渐隐。 */
+  private drawScorches(): void {
+    const ctx = this.ctx
+    for (const s of this.scorches) {
+      const a = 0.42 * Math.min(1, s.life / 1.5)
+      ctx.fillStyle = `rgba(18,14,10,${a})`
+      ctx.beginPath()
+      ctx.ellipse(s.x, s.y, s.r * 0.9, s.r * 0.65, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = `rgba(10,8,6,${a * 0.8})`
+      ctx.beginPath()
+      ctx.ellipse(s.x - s.r * 0.25, s.y + s.r * 0.12, s.r * 0.4, s.r * 0.28, 0.4, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.beginPath()
+      ctx.ellipse(s.x + s.r * 0.3, s.y - s.r * 0.14, s.r * 0.3, s.r * 0.22, -0.5, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+
+  /** 预警圈：脉动描边 + 随倒计时充能的红面。 */
+  private drawHazards(): void {
+    const ctx = this.ctx
+    for (const h of this.hazards) {
+      const prog = clamp(1 - h.t / h.t0, 0, 1)
+      const pulse = 0.45 + Math.abs(Math.sin(this.time * 10)) * 0.35
+      ctx.strokeStyle = `rgba(224, 69, 58, ${pulse})`
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.arc(h.x, h.y, h.r * (0.92 - prog * 0.12), 0, Math.PI * 2)
+      ctx.stroke()
+      if (prog > 0.15) {
+        ctx.fillStyle = `rgba(224, 69, 58, ${0.1 + prog * 0.16})`
+        ctx.beginPath()
+        ctx.arc(h.x, h.y, h.r * 0.85, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      ctx.lineWidth = 1
+    }
+  }
+
+  /** 爆炸冲击环：金色描边圆快速扩散。 */
+  private drawBoomRings(): void {
+    const ctx = this.ctx
+    for (const r of this.boomRings) {
+      const k = r.t / 0.35
+      ctx.globalAlpha = 1 - k
+      ctx.strokeStyle = '#ffd23f'
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.arc(r.x, r.y, 3 + r.max * k, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.globalAlpha = 1
+      ctx.lineWidth = 1
+    }
+  }
+
   private drawPickups(): void {
     const ctx = this.ctx
     for (const it of this.pickups) {
@@ -2209,7 +2525,7 @@ export class Game {
       ctx.stroke()
       return
     }
-    const frame = Math.floor(e.anim * 6) % 2
+    const frame = Math.floor(e.anim * (e.arch === 'bomb' && e.state === 1 ? 13 : 6)) % 2
     let name = `${e.arch}${frame}`
     if (e.arch === 'roll') name = 'roll'
     const white = e.flash > 0
@@ -2220,7 +2536,9 @@ export class Game {
     ctx.ellipse(e.x, e.y + e.r * 1.5 - 1, e.r * 1.5, e.r * 0.6, 0, 0, Math.PI * 2)
     ctx.fill()
 
-    const scale = e.elite ? 1.9 : 1.5
+    const scale =
+      (e.elite ? 1.9 : 1.5) *
+      (e.arch === 'bomb' && e.state === 1 ? 1 + Math.sin(this.time * 20) * 0.08 : 1)
     ctx.save()
     ctx.translate(Math.round(e.x), Math.round(e.y))
     if (e.arch === 'roll') ctx.rotate(e.rollAngle)
@@ -2301,6 +2619,49 @@ export class Game {
         ctx.beginPath()
         ctx.moveTo(b.x, b.y)
         ctx.lineTo(b.x + b.aimX * 340, b.y + b.aimY * 340)
+        ctx.stroke()
+        ctx.lineWidth = 1
+      }
+    }
+
+    // 粗激光：纸魔·幽魂凝视（紫） / 钱王·帝瞳金光（金）
+    const thick =
+      b.id === 'zhimo' && b.pattern === 4
+        ? { w: 12, core: 5, col: '#a78bfa', sweep: 0.5, spd: 2.4 }
+        : b.id === 'qianwang' && b.pattern === 7
+          ? { w: 14, core: 6, col: '#ffd23f', sweep: 0.8, spd: 1.5 }
+          : null
+    if (thick && !b.dead) {
+      const a =
+        b.step === 0 ? Math.atan2(b.aimY, b.aimX) : b.angle + Math.sin(this.time * thick.spd) * thick.sweep
+      const ex = b.x + Math.cos(a) * 360
+      const ey = b.y + Math.sin(a) * 360
+      if (b.step === 0) {
+        // 宽预警虚线
+        ctx.strokeStyle = `rgba(224, 69, 58, ${0.3 + Math.sin(this.time * 20) * 0.2})`
+        ctx.setLineDash([8, 5])
+        ctx.lineWidth = thick.w
+        ctx.beginPath()
+        ctx.moveTo(b.x, b.y)
+        ctx.lineTo(ex, ey)
+        ctx.stroke()
+        ctx.setLineDash([])
+        ctx.lineWidth = 1
+      } else {
+        const grad = ctx.createLinearGradient(b.x, b.y, ex, ey)
+        grad.addColorStop(0, thick.col)
+        grad.addColorStop(1, 'rgba(255,255,255,0.08)')
+        ctx.strokeStyle = grad
+        ctx.lineWidth = thick.w
+        ctx.beginPath()
+        ctx.moveTo(b.x, b.y)
+        ctx.lineTo(ex, ey)
+        ctx.stroke()
+        ctx.strokeStyle = '#ffffff'
+        ctx.lineWidth = thick.core
+        ctx.beginPath()
+        ctx.moveTo(b.x, b.y)
+        ctx.lineTo(ex, ey)
         ctx.stroke()
         ctx.lineWidth = 1
       }

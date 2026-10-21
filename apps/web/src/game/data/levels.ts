@@ -9,7 +9,7 @@ export const TILE = 16
 export const ROOM_TW = 30
 export const ROOM_TH = 16
 
-export type Arch = 'blob' | 'throw' | 'fly' | 'dash' | 'roll' | 'tank'
+export type Arch = 'blob' | 'throw' | 'fly' | 'dash' | 'roll' | 'tank' | 'bomb'
 
 export interface WaveEntry {
   arch: Arch
@@ -26,6 +26,8 @@ export interface LevelConfig {
   years: string
   /** 该关弹丸名（进入该关即进化） */
   projName: string
+  /** 开场小故事（逐行显示） */
+  story: string[]
   waves: Wave[][]
 }
 
@@ -157,6 +159,11 @@ export const LEVELS: LevelConfig[] = [
     sub: '贝布刀圜，货币之始',
     years: '商 — 前221',
     projName: '海贝弹',
+    story: [
+      '一枚海贝坠入泉眼，秘境的大门为你敞开。',
+      '刀币布币散落在回廊深处，贝仔与铲币怪守着它们。',
+      '搜集钱影，磨利弹丸——更深处的铸范已隐隐作响。',
+    ],
     waves: [
       [
         [{ arch: 'blob', count: 2 }],
@@ -182,6 +189,11 @@ export const LEVELS: LevelConfig[] = [
     sub: '半两五铢，方孔定型',
     years: '前221 — 220',
     projName: '半两弹',
+    story: [
+      '秦始皇一统币制，半两钱定下方孔千年的模样。',
+      '秘境深处的铸范自行开合，贝仔从铜液里涌出。',
+      '击败五铢母范·铸神，才能拿到通往六朝的钥匙。',
+    ],
     waves: [
       [
         [{ arch: 'fly', count: 3 }],
@@ -207,6 +219,11 @@ export const LEVELS: LevelConfig[] = [
     sub: '六朝纷钱，年号初现',
     years: '220 — 589',
     projName: '五铢弹',
+    story: [
+      '乱世钱轻，六朝的年号钱在风里打转。',
+      '钱库里滚着点了引信的爆竹钱妖——离它们远一点。',
+      '收好这一路的五铢，隋唐的钟声就在前方。',
+    ],
     waves: [
       [
         [{ arch: 'blob', count: 2 }, { arch: 'roll', count: 1 }],
@@ -214,11 +231,11 @@ export const LEVELS: LevelConfig[] = [
       ],
       [
         [{ arch: 'roll', count: 2 }, { arch: 'throw', count: 2 }],
-        [{ arch: 'dash', count: 2 }, { arch: 'roll', count: 1 }, { arch: 'fly', count: 2 }],
+        [{ arch: 'dash', count: 2 }, { arch: 'roll', count: 1 }, { arch: 'fly', count: 2 }, { arch: 'bomb', count: 1 }],
       ],
       [
         [{ arch: 'roll', count: 2 }, { arch: 'dash', count: 2 }, { arch: 'throw', count: 2 }],
-        [{ arch: 'blob', count: 3 }, { arch: 'fly', count: 3 }, { arch: 'roll', count: 2 }, { arch: 'throw', count: 1 }],
+        [{ arch: 'blob', count: 3 }, { arch: 'fly', count: 3 }, { arch: 'roll', count: 2 }, { arch: 'throw', count: 1 }, { arch: 'bomb', count: 1 }],
         [{ arch: 'roll', count: 1 }, { arch: 'throw', count: 2 }, { arch: 'fly', count: 2 }],
       ],
       [
@@ -233,6 +250,11 @@ export const LEVELS: LevelConfig[] = [
     sub: '开元通宝，宝文纪元',
     years: '581 — 979',
     projName: '开元弹',
+    story: [
+      '开元通宝开了宝文纪元，长安西市的灯昼夜不熄。',
+      '飞轮圣手在钱市中央抛掷轮钱，出手便是八轮齐飞。',
+      '接住他的轮子，或从轮缝里活下来。',
+    ],
     waves: [
       [
         [{ arch: 'tank', count: 1 }, { arch: 'throw', count: 2 }],
@@ -240,16 +262,16 @@ export const LEVELS: LevelConfig[] = [
       ],
       [
         [{ arch: 'tank', count: 1 }, { arch: 'dash', count: 2 }],
-        [{ arch: 'throw', count: 3 }, { arch: 'roll', count: 1 }, { arch: 'tank', count: 1 }],
+        [{ arch: 'throw', count: 3 }, { arch: 'roll', count: 1 }, { arch: 'tank', count: 1 }, { arch: 'bomb', count: 1 }],
       ],
       [
         [{ arch: 'tank', count: 2 }, { arch: 'roll', count: 2 }],
-        [{ arch: 'dash', count: 3 }, { arch: 'fly', count: 4 }, { arch: 'throw', count: 2 }, { arch: 'tank', count: 1 }],
+        [{ arch: 'dash', count: 3 }, { arch: 'fly', count: 4 }, { arch: 'throw', count: 2 }, { arch: 'tank', count: 1 }, { arch: 'bomb', count: 1 }],
         [{ arch: 'dash', count: 2 }, { arch: 'fly', count: 2 }],
       ],
       [
         [{ arch: 'tank', count: 2 }, { arch: 'roll', count: 1 }],
-        [{ arch: 'dash', count: 3 }, { arch: 'fly', count: 3 }, { arch: 'throw', count: 2 }],
+        [{ arch: 'dash', count: 3 }, { arch: 'fly', count: 3 }, { arch: 'throw', count: 2 }, { arch: 'bomb', count: 1 }],
         [{ arch: 'tank', count: 1 }, { arch: 'roll', count: 2 }, { arch: 'throw', count: 2 }],
       ],
     ],
@@ -260,23 +282,28 @@ export const LEVELS: LevelConfig[] = [
     sub: '御书年号，对钱之美',
     years: '960 — 1279',
     projName: '年号钱弹',
+    story: [
+      '御书钱文铁画银钩，对钱在掌心映出两宋的月亮。',
+      '铁钱重得压手，宝钞轻得像一句谎话。',
+      '穿过钱监与钞局，元明的纸影已在招手。',
+    ],
     waves: [
       [
-        [{ arch: 'fly', count: 4 }, { arch: 'throw', count: 2 }],
+        [{ arch: 'fly', count: 4 }, { arch: 'throw', count: 2 }, { arch: 'bomb', count: 1 }],
         [{ arch: 'roll', count: 2 }, { arch: 'blob', count: 2 }],
       ],
       [
         [{ arch: 'tank', count: 1 }, { arch: 'dash', count: 2 }, { arch: 'throw', count: 2 }],
-        [{ arch: 'fly', count: 4 }, { arch: 'roll', count: 2 }, { arch: 'tank', count: 1 }],
+        [{ arch: 'fly', count: 4 }, { arch: 'roll', count: 2 }, { arch: 'tank', count: 1 }, { arch: 'bomb', count: 2 }],
       ],
       [
         [{ arch: 'tank', count: 2 }, { arch: 'dash', count: 3 }, { arch: 'throw', count: 3 }],
         [{ arch: 'fly', count: 4 }, { arch: 'roll', count: 3 }, { arch: 'dash', count: 2 }, { arch: 'tank', count: 1 }, { arch: 'throw', count: 2 }],
-        [{ arch: 'tank', count: 1 }, { arch: 'roll', count: 2 }],
+        [{ arch: 'tank', count: 1 }, { arch: 'roll', count: 2 }, { arch: 'bomb', count: 1 }],
       ],
       [
         [{ arch: 'tank', count: 2 }, { arch: 'dash', count: 2 }, { arch: 'throw', count: 2 }],
-        [{ arch: 'fly', count: 5 }, { arch: 'roll', count: 3 }, { arch: 'tank', count: 1 }],
+        [{ arch: 'fly', count: 5 }, { arch: 'roll', count: 3 }, { arch: 'tank', count: 1 }, { arch: 'bomb', count: 2 }],
         [{ arch: 'dash', count: 3 }, { arch: 'throw', count: 3 }, { arch: 'fly', count: 4 }],
       ],
     ],
@@ -287,23 +314,28 @@ export const LEVELS: LevelConfig[] = [
     sub: '宝钞通宝，纸铜相争',
     years: '1206 — 1644',
     projName: '宝钞飞刃',
+    story: [
+      '一张宝钞换千文铜钱，纸与铜的战争烧进了秘境。',
+      '宝钞幽魂·纸魔把整座钱库折成了他的纸境。',
+      '撕开纸雨与幻影，最后一扇门通向大钱时代。',
+    ],
     waves: [
       [
         [{ arch: 'throw', count: 3 }, { arch: 'fly', count: 4 }],
-        [{ arch: 'roll', count: 2 }, { arch: 'tank', count: 1, elite: true }, { arch: 'dash', count: 2 }],
+        [{ arch: 'roll', count: 2 }, { arch: 'tank', count: 1, elite: true }, { arch: 'dash', count: 2 }, { arch: 'bomb', count: 1 }],
       ],
       [
         [{ arch: 'tank', count: 2 }, { arch: 'dash', count: 2, elite: true }, { arch: 'throw', count: 2 }],
-        [{ arch: 'fly', count: 5 }, { arch: 'roll', count: 2 }, { arch: 'throw', count: 3 }],
+        [{ arch: 'fly', count: 5 }, { arch: 'roll', count: 2 }, { arch: 'throw', count: 3 }, { arch: 'bomb', count: 2 }],
       ],
       [
         [{ arch: 'tank', count: 2 }, { arch: 'roll', count: 3 }, { arch: 'dash', count: 2 }],
-        [{ arch: 'fly', count: 4 }, { arch: 'throw', count: 4 }, { arch: 'dash', count: 3 }, { arch: 'tank', count: 1 }],
+        [{ arch: 'fly', count: 4 }, { arch: 'throw', count: 4 }, { arch: 'dash', count: 3 }, { arch: 'tank', count: 1 }, { arch: 'bomb', count: 2 }],
         [{ arch: 'fly', count: 3 }, { arch: 'dash', count: 2 }],
       ],
       [
         [{ arch: 'tank', count: 2 }, { arch: 'roll', count: 3 }, { arch: 'throw', count: 3 }],
-        [{ arch: 'dash', count: 4 }, { arch: 'fly', count: 4 }, { arch: 'tank', count: 1 }],
+        [{ arch: 'dash', count: 4 }, { arch: 'fly', count: 4 }, { arch: 'tank', count: 1 }, { arch: 'bomb', count: 2 }],
         [{ arch: 'roll', count: 3 }, { arch: 'throw', count: 3 }, { arch: 'dash', count: 3, elite: true }],
       ],
     ],
@@ -314,24 +346,29 @@ export const LEVELS: LevelConfig[] = [
     sub: '大钱时代，铁面钱王',
     years: '1636 — 1912',
     projName: '咸丰大钱弹',
+    story: [
+      '咸丰当百，一枚大钱压弯了挑夫的扁担。',
+      '铁面钱王坐在钱山之巅，当百大钱是他的甲胄。',
+      '这是秘境的最后一战——把钱王的财库轰开。',
+    ],
     waves: [
       [
         [{ arch: 'roll', count: 3 }, { arch: 'throw', count: 3 }],
-        [{ arch: 'fly', count: 4 }, { arch: 'dash', count: 3 }],
+        [{ arch: 'fly', count: 4 }, { arch: 'dash', count: 3 }, { arch: 'bomb', count: 1 }],
       ],
       [
         [{ arch: 'tank', count: 2 }, { arch: 'roll', count: 2 }, { arch: 'throw', count: 3 }],
-        [{ arch: 'dash', count: 4 }, { arch: 'fly', count: 4 }, { arch: 'tank', count: 1 }],
+        [{ arch: 'dash', count: 4 }, { arch: 'fly', count: 4 }, { arch: 'tank', count: 1 }, { arch: 'bomb', count: 2 }],
+      ],
+      [
+        [{ arch: 'tank', count: 2 }, { arch: 'roll', count: 3 }, { arch: 'dash', count: 3 }, { arch: 'throw', count: 2 }, { arch: 'bomb', count: 2 }],
+        [{ arch: 'fly', count: 5 }, { arch: 'dash', count: 4, elite: true }, { arch: 'throw', count: 3 }, { arch: 'tank', count: 2 }],
+        [{ arch: 'tank', count: 1 }, { arch: 'roll', count: 2 }, { arch: 'throw', count: 2 }, { arch: 'bomb', count: 1 }],
       ],
       [
         [{ arch: 'tank', count: 2 }, { arch: 'roll', count: 3 }, { arch: 'dash', count: 3 }, { arch: 'throw', count: 2 }],
-        [{ arch: 'fly', count: 5 }, { arch: 'dash', count: 4, elite: true }, { arch: 'throw', count: 3 }, { arch: 'tank', count: 2 }],
-        [{ arch: 'tank', count: 1 }, { arch: 'roll', count: 2 }, { arch: 'throw', count: 2 }],
-      ],
-      [
-        [{ arch: 'tank', count: 2 }, { arch: 'roll', count: 3 }, { arch: 'dash', count: 3 }, { arch: 'throw', count: 2 }],
-        [{ arch: 'fly', count: 5 }, { arch: 'dash', count: 4, elite: true }, { arch: 'throw', count: 3 }, { arch: 'tank', count: 2 }],
-        [{ arch: 'dash', count: 4 }, { arch: 'fly', count: 5 }, { arch: 'tank', count: 2 }, { arch: 'roll', count: 3 }],
+        [{ arch: 'fly', count: 5 }, { arch: 'dash', count: 4, elite: true }, { arch: 'throw', count: 3 }, { arch: 'tank', count: 2 }, { arch: 'bomb', count: 2 }],
+        [{ arch: 'dash', count: 4 }, { arch: 'fly', count: 5 }, { arch: 'tank', count: 2 }, { arch: 'roll', count: 3 }, { arch: 'bomb', count: 2 }],
       ],
     ],
   },

@@ -34,7 +34,7 @@ interface Props {
   onExit: () => void
 }
 
-type Phase = 'title' | 'play' | 'quiz' | 'clear' | 'dead' | 'victory' | 'paused'
+type Phase = 'title' | 'play' | 'quiz' | 'clear' | 'dead' | 'victory' | 'paused' | 'story'
 
 interface QuizState {
   question: QuizQuestion
@@ -177,7 +177,7 @@ function GameStage({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const gameRef = useRef<Game | null>(null)
-  const [phase, setPhase] = useState<Phase>('play')
+  const [phase, setPhase] = useState<Phase>('story')
   const [quiz, setQuiz] = useState<QuizState | null>(null)
   const [clearLevel, setClearLevel] = useState(0)
   const [prompt, setPrompt] = useState<string | null>(null)
@@ -310,6 +310,11 @@ function GameStage({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  // 小故事页：暂停游戏等待启程
+  useEffect(() => {
+    if (phase === 'story') gameRef.current?.pause()
+  }, [phase])
 
   const setStick = (which: 'move' | 'aim', v: { x: number; y: number } | null): void => {
     const game = gameRef.current
@@ -449,9 +454,36 @@ function GameStage({
               const g = gameRef.current
               if (g && id !== g.weapon.weaponId) g.switchWeapon(id)
               g?.nextLevel()
-              setPhase('play')
+              setPhase('story')
             }}
           />
+        </Overlay>
+      ) : null}
+
+      {/* 开场小故事 */}
+      {phase === 'story' ? (
+        <Overlay>
+          <p className="text-caption text-[#8a8f98]">
+            {lv.years} · 第 {levelRef.current + 1} 关
+          </p>
+          <h2 className="text-display font-bold text-[#ffd23f]">
+            {lv.era} · {lv.sub}
+          </h2>
+          <div className="max-w-md space-y-2 text-center text-body leading-relaxed text-[#c8cdd8]">
+            {lv.story.map((line, i) => (
+              <p key={i}>{line}</p>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="btn-game px-10 py-2"
+            onClick={() => {
+              gameRef.current?.resume()
+              setPhase('play')
+            }}
+          >
+            启程 →
+          </button>
         </Overlay>
       ) : null}
 

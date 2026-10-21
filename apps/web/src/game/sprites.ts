@@ -352,6 +352,35 @@ const E_TANK_1 = [
   '..KKKK..KKKK..',
 ]
 
+/** 自爆原型：爆竹钱妖（钱陶罐点引信，两帧火星跳动/怒目挤压） */
+const E_BOMB_0 = [
+  '....Y.....',
+  '...KyK....',
+  '....K.....',
+  '..KKKKKK..',
+  '.KlllmmmK.',
+  '.KlmememK.',
+  '.KlmmmmMK.',
+  '.KmmKKmmK.',
+  '.KmMMMMMK.',
+  '..KMMMMK..',
+  '...KKKK...',
+]
+
+const E_BOMB_1 = [
+  '....W.....',
+  '...WYWW...',
+  '....K.....',
+  '..KKKKKK..',
+  '.KlllmmmK.',
+  'KlmeKeKmMK',
+  'KlmmmmmMK.',
+  'KmmKKKmmK.',
+  '.KMmmMMK..',
+  '.KMMMMMK..',
+  '..KKKKK...',
+]
+
 /** BOSS：铁面钱王·咸丰当百（26×26，双圈郭 + 方孔怒脸 + 当百金记） */
 const BOSS = [
   '..........KKKKK...........',
@@ -868,6 +897,12 @@ export function spriteCanvas(name: string, eraIdx: number): HTMLCanvasElement {
       break
     case 'roll':
       cv = build(E_ROLL, pal)
+      break
+    case 'bomb0':
+      cv = build(E_BOMB_0, pal)
+      break
+    case 'bomb1':
+      cv = build(E_BOMB_1, pal)
       break
     case 'tank0':
       cv = build(E_TANK_0, pal)
