@@ -213,6 +213,8 @@ export class Sfx {
       this.master = this.ctx.createGain()
       this.master.gain.value = 0.14 * this.volume
       this.master.connect(this.ctx.destination)
+      // 首次解锁手势前就有人开了 BGM → 现在补播
+      if (this.bgmWant && this.bgmOn) this.startBgm()
     } catch {
       this.ctx = null
     }
@@ -322,7 +324,85 @@ export class Sfx {
     }
   }
 
+  /* ---------------- 背景音乐：五声音阶芯片循环（无音频文件） ---------------- */
+
+  /** 设置面板开关（持久化） */
+  bgmOn = true
+  private bgmWant = false
+  private bgmGain: GainNode | null = null
+  private bgmTimer: number | null = null
+  private bgmStep = 0
+  private bgmNextT = 0
+
+  setBgm(on: boolean): void {
+    this.bgmOn = on
+    if (on) this.startBgm()
+    else this.stopBgm()
+  }
+
+  startBgm(): void {
+    this.bgmWant = true
+    if (!this.ctx || this.bgmTimer !== null) return
+    this.bgmGain = this.ctx.createGain()
+    this.bgmGain.gain.value = 0.6
+    this.bgmGain.connect(this.master ?? this.ctx.destination)
+    this.bgmStep = 0
+    this.bgmNextT = this.ctx.currentTime + 0.15
+    this.bgmTimer = window.setInterval(() => this.pumpBgm(), 180)
+    this.pumpBgm()
+  }
+
+  stopBgm(): void {
+    this.bgmWant = false
+    if (this.bgmTimer !== null) {
+      window.clearInterval(this.bgmTimer)
+      this.bgmTimer = null
+    }
+    if (this.bgmGain) {
+      try {
+        this.bgmGain.disconnect()
+      } catch {
+        /* 忽略 */
+      }
+      this.bgmGain = null
+    }
+  }
+
+  /** 前瞻式调度：每 180ms 把未来 0.5s 内的音符排进音频时钟 */
+  private pumpBgm(): void {
+    if (!this.ctx || !this.bgmGain || this.muted || !this.bgmOn) return
+    const STEP = 0.27 // 八分音符 ≈ 111 BPM
+    while (this.bgmNextT < this.ctx.currentTime + 0.5) {
+      this.bgmNote(this.bgmStep, this.bgmNextT)
+      this.bgmStep = (this.bgmStep + 1) % BGM_LEAD.length
+      this.bgmNextT += STEP
+    }
+  }
+
+  private bgmNote(step: number, t: number): void {
+    const lead = BGM_LEAD[step]!
+    if (lead !== null) this.bgmTone(523.25 * 2 ** (lead / 12), t, 0.24, 'square', 0.3)
+    const bass = BGM_BASS[step]!
+    if (bass !== null) this.bgmTone(130.81 * 2 ** (bass / 12), t, 0.5, 'triangle', 0.42)
+  }
+
+  private bgmTone(freq: number, t: number, dur: number, type: OscillatorType, gain: number): void {
+    if (!this.ctx || !this.bgmGain) return
+    const osc = this.ctx.createOscillator()
+    const g = this.ctx.createGain()
+    osc.type = type
+    osc.frequency.value = freq
+    g.gain.setValueAtTime(0.0001, t)
+    g.gain.exponentialRampToValueAtTime(gain, t + 0.02)
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+    osc.connect(g)
+    g.connect(this.bgmGain)
+    osc.start(t)
+    osc.stop(t + dur + 0.05)
+  }
+
   destroy(): void {
+    this.stopBgm()
     try {
       void this.ctx?.close()
     } catch {
@@ -331,6 +411,30 @@ export class Sfx {
     this.ctx = null
   }
 }
+
+/* BGM 曲谱：C 大调五声音阶（C D E G A），64 步 = 8 小节 × 8 个八分音符。
+ * 主旋律为 C5 起的半音偏移，null 为休止；低音声部为 C3 起的半音偏移。 */
+const BGM_LEAD: (number | null)[] = [
+  4, null, 7, 9, null, 7, 4, 2,
+  0, null, 2, 4, null, null, null, null,
+  4, null, 7, 9, null, 12, 9, 7,
+  4, null, 2, 0, null, null, null, null,
+  -3, null, 0, 2, null, 4, 2, 0,
+  2, null, 4, 7, null, null, null, null,
+  4, 7, 9, null, 12, null, 9, 7,
+  4, null, 2, 0, null, null, null, null,
+]
+
+const BGM_BASS: (number | null)[] = [
+  0, null, null, null, -5, null, null, null,
+  -3, null, null, null, -8, null, null, null,
+  -7, null, null, null, -5, null, null, null,
+  0, null, null, null, -5, null, null, null,
+  -3, null, null, null, -8, null, null, null,
+  -7, null, null, null, -5, null, null, null,
+  -7, null, null, null, -5, null, null, null,
+  0, null, null, null, 0, null, null, null,
+]
 
 /* ------------------------------------------------------------------ 粒子 */
 

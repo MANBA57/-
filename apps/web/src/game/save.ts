@@ -136,6 +136,26 @@ export function saveAutoAim(on: boolean): void {
   }
 }
 
+const BGM_KEY = 'coinmuseum:game-bgm'
+
+export function loadBgm(): boolean {
+  if (!isBrowser) return true
+  try {
+    return localStorage.getItem(BGM_KEY) !== 'off'
+  } catch {
+    return true
+  }
+}
+
+export function saveBgm(on: boolean): void {
+  if (!isBrowser) return
+  try {
+    localStorage.setItem(BGM_KEY, on ? 'on' : 'off')
+  } catch {
+    /* 忽略 */
+  }
+}
+
 export function loadKeys(): KeyBindings {
   if (!isBrowser) return { ...DEFAULT_KEYS }
   try {

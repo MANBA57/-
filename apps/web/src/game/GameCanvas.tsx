@@ -28,6 +28,8 @@ import {
   saveVol,
   loadAutoAim,
   saveAutoAim,
+  loadBgm,
+  saveBgm,
   type RunState,
 } from './save'
 
@@ -221,14 +223,18 @@ function GameStage({
   useEffect(() => {
     settingsOpenRef.current = settingsOpen
   }, [settingsOpen])
-  const applySettings = useCallback((keys: KeyBindings, vol: number, autoAim: boolean): void => {
-    const g = gameRef.current
-    if (g) {
-      g.input.keymap = { ...keys }
-      g.sfx.setVolume(vol)
-      g.autoAim = autoAim
-    }
-  }, [])
+  const applySettings = useCallback(
+    (keys: KeyBindings, vol: number, autoAim: boolean, bgm: boolean): void => {
+      const g = gameRef.current
+      if (g) {
+        g.input.keymap = { ...keys }
+        g.sfx.setVolume(vol)
+        g.autoAim = autoAim
+        g.sfx.setBgm(bgm)
+      }
+    },
+    [],
+  )
 
   /** 每关的题目洗牌牌堆（宝箱按序抽取） */
   const deckRef = useRef<number[]>([])
@@ -289,10 +295,11 @@ function GameStage({
       startLevel,
     )
     gameRef.current = game
-    // 已存设置：键位 + 音量 + 自动瞄准
+    // 已存设置：键位 + 音量 + 自动瞄准 + 背景音乐
     game.input.keymap = loadKeys()
     game.sfx.setVolume(loadVol())
     game.autoAim = loadAutoAim()
+    game.sfx.setBgm(loadBgm())
     // 续玩：恢复上次的武器与血量上限（与死亡重试保留武器的规则一致）
     if (carry) {
       game.weapon = { ...carry.weapon }
@@ -910,11 +917,12 @@ function SettingsPanel({
 }: {
   onClose: () => void
   /** 每次改动后回调（GameStage 热套到游戏实例） */
-  onApply?: (keys: KeyBindings, vol: number, autoAim: boolean) => void
+  onApply?: (keys: KeyBindings, vol: number, autoAim: boolean, bgm: boolean) => void
 }) {
   const [keys, setKeys] = useState<KeyBindings>(() => loadKeys())
   const [vol, setVol] = useState<number>(() => loadVol())
   const [autoAim, setAutoAim] = useState<boolean>(() => loadAutoAim())
+  const [bgm, setBgm] = useState<boolean>(() => loadBgm())
   const [listening, setListening] = useState<keyof KeyBindings | null>(null)
 
   // 拦截全部按键：改键捕获 / Esc 关面板 / 防漏进游戏
@@ -937,9 +945,10 @@ function SettingsPanel({
     saveKeys(keys)
     saveVol(vol)
     saveAutoAim(autoAim)
-    onApply?.(keys, vol, autoAim)
+    saveBgm(bgm)
+    onApply?.(keys, vol, autoAim, bgm)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keys, vol, autoAim])
+  }, [keys, vol, autoAim, bgm])
 
   return (
     <Overlay>
@@ -970,6 +979,17 @@ function SettingsPanel({
             onClick={() => setAutoAim((v) => !v)}
           >
             {autoAim ? '开' : '关'}
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <p className="text-micro leading-relaxed text-[#8a8f98]">背景音乐</p>
+          <button
+            type="button"
+            className={bgm ? 'btn-game px-4 py-1 text-micro' : 'btn-game-ghost px-4 py-1 text-micro'}
+            onClick={() => setBgm((v) => !v)}
+          >
+            {bgm ? '开' : '关'}
           </button>
         </div>
 

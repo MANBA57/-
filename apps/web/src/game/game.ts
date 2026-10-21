@@ -317,7 +317,7 @@ export class Game {
   private destroyed = false
 
   constructor(
-    private canvas: HTMLCanvasElement,
+    canvas: HTMLCanvasElement,
     private cb: GameCallbacks,
     startLevel = 0,
   ) {
@@ -326,7 +326,9 @@ export class Game {
     this.input.onKeyOnce((e) => {
       if (e.code === this.input.keymap.interact) this.tryInteract()
     })
-    canvas.addEventListener('pointerdown', this.firstGesture)
+    // 手机上玩家全程点 DOM 按钮/摇杆，画布收不到事件——解锁监听必须挂 window
+    window.addEventListener('pointerdown', this.firstGesture)
+    window.addEventListener('touchstart', this.firstGesture)
     this.levelIdx = clamp(startLevel, 0, 6)
     this.loadLevel(this.levelIdx)
     // 开发期调试钩子：浏览器控制台可用 window.__game 操作游戏内部状态
@@ -352,7 +354,8 @@ export class Game {
     cancelAnimationFrame(this.raf)
     this.input.destroy()
     this.sfx.destroy()
-    this.canvas.removeEventListener('pointerdown', this.firstGesture)
+    window.removeEventListener('pointerdown', this.firstGesture)
+    window.removeEventListener('touchstart', this.firstGesture)
     if (import.meta.env.DEV) {
       const w = window as unknown as { __game?: Game }
       if (w.__game === this) w.__game = undefined
