@@ -48,15 +48,15 @@ export const TEMPLATES: Record<string, string[]> = {
     '#............................#',
     '#............................#',
     '#............................#',
-    '#............................#',
+    '#...........................D',
     '###############F##############',
   ],
   /** 战斗房（门在右墙——由大厅左门进入） */
   combatR: [
     '##############################',
-    '#............................#',
+    '#.......o............o.......#',
     '#..............C.............#',
-    '#............................#',
+    '#.......o............o.......#',
     '#............................#',
     '#............................#',
     '#............................#',
@@ -73,9 +73,9 @@ export const TEMPLATES: Record<string, string[]> = {
   /** 战斗房（门在左墙——由大厅右门进入） */
   combatL: [
     '##############################',
-    '#............................#',
+    '#.......o............o.......#',
     '#..............C.............#',
-    '#............................#',
+    '#.......o............o.......#',
     '#............................#',
     '#............................#',
     '#............................#',
@@ -92,9 +92,9 @@ export const TEMPLATES: Record<string, string[]> = {
   /** 战斗房（门在下墙——由大厅上门进入） */
   combatB: [
     '##############################',
-    '#............................#',
+    '#.......o............o.......#',
     '#..............C.............#',
-    '#............................#',
+    '#.......o............o.......#',
     '#............................#',
     '#............................#',
     '#............................#',
@@ -170,6 +170,10 @@ export const LEVELS: LevelConfig[] = [
         [{ arch: 'blob', count: 2 }, { arch: 'throw', count: 2 }],
         [{ arch: 'dash', count: 2 }, { arch: 'throw', count: 1 }, { arch: 'blob', count: 2 }],
       ],
+      [
+        [{ arch: 'blob', count: 2 }],
+        [{ arch: 'dash', count: 1 }, { arch: 'throw', count: 1 }],
+      ],
     ],
   },
   {
@@ -191,6 +195,10 @@ export const LEVELS: LevelConfig[] = [
         [{ arch: 'blob', count: 3 }, { arch: 'throw', count: 2 }],
         [{ arch: 'dash', count: 2 }, { arch: 'fly', count: 3 }, { arch: 'throw', count: 2 }],
       ],
+      [
+        [{ arch: 'fly', count: 3 }, { arch: 'throw', count: 1 }],
+        [{ arch: 'dash', count: 2 }, { arch: 'blob', count: 2 }],
+      ],
     ],
   },
   {
@@ -211,6 +219,11 @@ export const LEVELS: LevelConfig[] = [
       [
         [{ arch: 'roll', count: 2 }, { arch: 'dash', count: 2 }, { arch: 'throw', count: 2 }],
         [{ arch: 'blob', count: 3 }, { arch: 'fly', count: 3 }, { arch: 'roll', count: 2 }, { arch: 'throw', count: 1 }],
+        [{ arch: 'roll', count: 1 }, { arch: 'throw', count: 2 }, { arch: 'fly', count: 2 }],
+      ],
+      [
+        [{ arch: 'roll', count: 2 }, { arch: 'dash', count: 1 }],
+        [{ arch: 'tank', count: 1 }, { arch: 'fly', count: 3 }],
       ],
     ],
   },
@@ -232,6 +245,12 @@ export const LEVELS: LevelConfig[] = [
       [
         [{ arch: 'tank', count: 2 }, { arch: 'roll', count: 2 }],
         [{ arch: 'dash', count: 3 }, { arch: 'fly', count: 4 }, { arch: 'throw', count: 2 }, { arch: 'tank', count: 1 }],
+        [{ arch: 'dash', count: 2 }, { arch: 'fly', count: 2 }],
+      ],
+      [
+        [{ arch: 'tank', count: 2 }, { arch: 'roll', count: 1 }],
+        [{ arch: 'dash', count: 3 }, { arch: 'fly', count: 3 }, { arch: 'throw', count: 2 }],
+        [{ arch: 'tank', count: 1 }, { arch: 'roll', count: 2 }, { arch: 'throw', count: 2 }],
       ],
     ],
   },
@@ -253,6 +272,12 @@ export const LEVELS: LevelConfig[] = [
       [
         [{ arch: 'tank', count: 2 }, { arch: 'dash', count: 3 }, { arch: 'throw', count: 3 }],
         [{ arch: 'fly', count: 4 }, { arch: 'roll', count: 3 }, { arch: 'dash', count: 2 }, { arch: 'tank', count: 1 }, { arch: 'throw', count: 2 }],
+        [{ arch: 'tank', count: 1 }, { arch: 'roll', count: 2 }],
+      ],
+      [
+        [{ arch: 'tank', count: 2 }, { arch: 'dash', count: 2 }, { arch: 'throw', count: 2 }],
+        [{ arch: 'fly', count: 5 }, { arch: 'roll', count: 3 }, { arch: 'tank', count: 1 }],
+        [{ arch: 'dash', count: 3 }, { arch: 'throw', count: 3 }, { arch: 'fly', count: 4 }],
       ],
     ],
   },
@@ -274,6 +299,12 @@ export const LEVELS: LevelConfig[] = [
       [
         [{ arch: 'tank', count: 2 }, { arch: 'roll', count: 3 }, { arch: 'dash', count: 2 }],
         [{ arch: 'fly', count: 4 }, { arch: 'throw', count: 4 }, { arch: 'dash', count: 3 }, { arch: 'tank', count: 1 }],
+        [{ arch: 'fly', count: 3 }, { arch: 'dash', count: 2 }],
+      ],
+      [
+        [{ arch: 'tank', count: 2 }, { arch: 'roll', count: 3 }, { arch: 'throw', count: 3 }],
+        [{ arch: 'dash', count: 4 }, { arch: 'fly', count: 4 }, { arch: 'tank', count: 1 }],
+        [{ arch: 'roll', count: 3 }, { arch: 'throw', count: 3 }, { arch: 'dash', count: 3, elite: true }],
       ],
     ],
   },
@@ -295,16 +326,23 @@ export const LEVELS: LevelConfig[] = [
       [
         [{ arch: 'tank', count: 2 }, { arch: 'roll', count: 3 }, { arch: 'dash', count: 3 }, { arch: 'throw', count: 2 }],
         [{ arch: 'fly', count: 5 }, { arch: 'dash', count: 4, elite: true }, { arch: 'throw', count: 3 }, { arch: 'tank', count: 2 }],
+        [{ arch: 'tank', count: 1 }, { arch: 'roll', count: 2 }, { arch: 'throw', count: 2 }],
+      ],
+      [
+        [{ arch: 'tank', count: 2 }, { arch: 'roll', count: 3 }, { arch: 'dash', count: 3 }, { arch: 'throw', count: 2 }],
+        [{ arch: 'fly', count: 5 }, { arch: 'dash', count: 4, elite: true }, { arch: 'throw', count: 3 }, { arch: 'tank', count: 2 }],
+        [{ arch: 'dash', count: 4 }, { arch: 'fly', count: 5 }, { arch: 'tank', count: 2 }, { arch: 'roll', count: 3 }],
       ],
     ],
   },
 ]
 
-/** 21 次宝箱答题全对时的武器强化顺序（7 关 × 3 箱）。 */
+/** 28 次宝箱答题全对时的武器强化顺序（7 关 × 4 箱）。 */
 export const UPGRADE_CYCLE: ('rate' | 'dmg' | 'proj' | 'pierce')[] = [
   'rate', 'dmg', 'rate', 'dmg', 'proj', 'rate', 'pierce',
   'dmg', 'rate', 'proj', 'rate', 'dmg', 'pierce', 'rate',
   'dmg', 'rate', 'proj', 'dmg', 'rate', 'dmg', 'dmg',
+  'proj', 'rate', 'dmg', 'pierce', 'dmg', 'rate', 'dmg',
 ]
 
 export const UPGRADE_LABEL: Record<'rate' | 'dmg' | 'proj' | 'pierce', string> = {

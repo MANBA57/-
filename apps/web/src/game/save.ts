@@ -1,11 +1,15 @@
 /**
- * 小游戏本地存档：最高通关关卡 + 钱币图鉴收集 + 音效开关。
+ * 小游戏本地存档：最高通关关卡 + 钱币图鉴收集 + 音效开关/音量 + 键位 + 单局进度。
  * 照 compare.ts 的模式：isBrowser 守卫（预渲染 Node 环境）+ try/catch（隐私模式）。
  */
+
+import { DEFAULT_KEYS, type KeyBindings } from './engine'
 
 const BEST_KEY = 'coinmuseum:game-best'
 const COLLECTION_KEY = 'coinmuseum:game-collection'
 const SFX_KEY = 'coinmuseum:game-sfx'
+const VOL_KEY = 'coinmuseum:game-vol'
+const KEYS_KEY = 'coinmuseum:game-keys'
 const RUN_KEY = 'coinmuseum:game-run'
 
 const isBrowser = typeof window !== 'undefined' && typeof localStorage !== 'undefined'
@@ -74,6 +78,50 @@ export function saveSfx(on: boolean): void {
   if (!isBrowser) return
   try {
     localStorage.setItem(SFX_KEY, on ? 'on' : 'off')
+  } catch {
+    /* 忽略 */
+  }
+}
+
+export function loadVol(): number {
+  if (!isBrowser) return 1
+  try {
+    const v = Number.parseFloat(localStorage.getItem(VOL_KEY) ?? '1')
+    return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1
+  } catch {
+    return 1
+  }
+}
+
+export function saveVol(v: number): void {
+  if (!isBrowser) return
+  try {
+    localStorage.setItem(VOL_KEY, String(Math.max(0, Math.min(1, v))))
+  } catch {
+    /* 忽略 */
+  }
+}
+
+export function loadKeys(): KeyBindings {
+  if (!isBrowser) return { ...DEFAULT_KEYS }
+  try {
+    const raw = localStorage.getItem(KEYS_KEY)
+    if (!raw) return { ...DEFAULT_KEYS }
+    const k = JSON.parse(raw) as Partial<KeyBindings>
+    const out = { ...DEFAULT_KEYS }
+    for (const slot of ['up', 'down', 'left', 'right', 'interact'] as const) {
+      if (typeof k[slot] === 'string' && k[slot]) out[slot] = k[slot]!
+    }
+    return out
+  } catch {
+    return { ...DEFAULT_KEYS }
+  }
+}
+
+export function saveKeys(k: KeyBindings): void {
+  if (!isBrowser) return
+  try {
+    localStorage.setItem(KEYS_KEY, JSON.stringify(k))
   } catch {
     /* 忽略 */
   }

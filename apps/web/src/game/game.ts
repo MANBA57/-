@@ -5,6 +5,8 @@
  */
 
 import { Input, Sfx, Particles, Rng, clamp, dist, type Vec } from './engine'
+
+export { DEFAULT_KEYS, type KeyBindings } from './engine'
 import { spriteCanvas, spriteWhite, ERA_PALETTES } from './sprites'
 import { TILE, ROOM_TW, ROOM_TH, TEMPLATES, LEVELS, UPGRADE_CYCLE, type Arch } from './data/levels'
 import type { Wave } from './data/levels'
@@ -163,8 +165,8 @@ export class Game {
   private rooms: Record<string, Room> = {}
   private current: Room | null = null
   private clearedCombat = new Set<string>()
-  /** 大厅左/右/上三门各自通往的战斗房（小地图用） */
-  private sideRoom: Record<'L' | 'R' | 'T', string> = { L: '', R: '', T: '' }
+  /** 大厅四个侧门各自通往的战斗房（小地图用） */
+  private sideRoom: Record<'L' | 'R' | 'T' | 'R2', string> = { L: '', R: '', T: '', R2: '' }
 
   player = {
     x: 240,
@@ -212,7 +214,7 @@ export class Game {
     this.ctx = canvas.getContext('2d')!
     this.input = new Input(canvas)
     this.input.onKeyOnce((e) => {
-      if (e.code === 'KeyE') this.tryInteract()
+      if (e.code === this.input.keymap.interact) this.tryInteract()
     })
     canvas.addEventListener('pointerdown', this.firstGesture)
     this.levelIdx = clamp(startLevel, 0, 6)
@@ -269,26 +271,27 @@ export class Game {
     this.clearedCombat = new Set()
     this.rooms = {}
 
-    // 大厅 + 三战斗房 + 关底；大厅三门随机分配给三个战斗房
+    // 大厅 + 四战斗房 + 关底；大厅四门随机分配给四个战斗房
     this.rooms.hub = this.parseRoom('hub', TEMPLATES.hub!, [], [])
     // 大厅的门由下面的推送统一登记（模板里的 T/F/D 只留视觉位）
     this.rooms.hub.doors = []
-    const sides: ('L' | 'R' | 'T')[] = ['L', 'R', 'T']
+    const sides: ('L' | 'R' | 'T' | 'R2')[] = ['L', 'R', 'T', 'R2']
     // 洗牌（种子随机，同一次进入保持一致）
     for (let i = sides.length - 1; i > 0; i--) {
       const j = Math.floor(this.rng.next() * (i + 1))
       ;[sides[i], sides[j]] = [sides[j]!, sides[i]!]
     }
-    const tmplBySide: Record<string, string> = { L: 'combatR', R: 'combatL', T: 'combatB' }
+    const tmplBySide: Record<string, string> = { L: 'combatR', R: 'combatL', T: 'combatB', R2: 'combatL' }
     const hubDoorBySide: Record<string, { tx: number; ty: number }> = {
       L: { tx: 0, ty: 8 },
       R: { tx: ROOM_TW - 1, ty: 8 },
       T: { tx: 15, ty: 0 },
+      R2: { tx: ROOM_TW - 1, ty: 12 },
     }
     const finalKey = idx === 6 ? 'boss' : 'final'
     const finalTmpl = idx === 6 ? TEMPLATES.bossT! : TEMPLATES.finalT!
 
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       const side = sides[i]!
       const tmplName = tmplBySide[side]!
       const key = `c${i}`
@@ -873,8 +876,8 @@ export class Game {
         this.clearedCombat.add(room.key)
         this.sfx.play('door')
         this.banner = { text: '战斗胜利！宝箱已解锁', t: 1.6 }
-        if (this.clearedCombat.size >= 3) {
-          this.banner = { text: '三房已清——关底大门开启！', t: 2 }
+        if (this.clearedCombat.size >= 4) {
+          this.banner = { text: '四房已清——关底大门开启！', t: 2 }
           this.sfx.play('upgrade')
         }
       }
@@ -1291,7 +1294,7 @@ export class Game {
   /* ------------------------------------------------------------ 渲染 */
 
   private doorLocked(room: Room, d: DoorSpot): boolean {
-    if (d.kind === 'final') return this.clearedCombat.size < 3
+    if (d.kind === 'final') return this.clearedCombat.size < 4
     if (d.kind === 'finalReturn') return room.combatActive
     return room.combatActive
   }
@@ -1438,10 +1441,10 @@ export class Game {
     // 影子
     ctx.fillStyle = 'rgba(0,0,0,0.22)'
     ctx.beginPath()
-    ctx.ellipse(e.x, e.y + e.r - 1, e.r, e.r * 0.4, 0, 0, Math.PI * 2)
+    ctx.ellipse(e.x, e.y + e.r * 1.5 - 1, e.r * 1.5, e.r * 0.6, 0, 0, Math.PI * 2)
     ctx.fill()
 
-    const scale = e.elite ? 1.25 : 1
+    const scale = e.elite ? 1.9 : 1.5
     ctx.save()
     ctx.translate(Math.round(e.x), Math.round(e.y))
     if (e.arch === 'roll') ctx.rotate(e.rollAngle)
@@ -1496,7 +1499,7 @@ export class Game {
     const scale = b.dead ? Math.max(0, 1 - b.deadT / 1.2) : 1 + (b.phase === 2 ? Math.sin(this.time * 10) * 0.02 : 0)
     ctx.save()
     ctx.translate(Math.round(b.x), Math.round(b.y))
-    ctx.scale(scale * 2, scale * 2) // 24×24 画布按 2 倍出
+    ctx.scale(scale * 2.3, scale * 2.3) // 26×26 画布按 2.3 倍出，更威压
     if (b.dead) ctx.rotate(b.deadT * 1.5)
     ctx.drawImage(spr, -spr.width / 2, -spr.height / 2)
     ctx.restore()
@@ -1524,20 +1527,21 @@ export class Game {
     const spr = spriteCanvas(`player${frame}`, this.levelIdx)
     ctx.fillStyle = 'rgba(0,0,0,0.25)'
     ctx.beginPath()
-    ctx.ellipse(p.x, p.y + 6, 6, 2.5, 0, 0, Math.PI * 2)
+    ctx.ellipse(p.x, p.y + 9, 9, 3.5, 0, 0, Math.PI * 2)
     ctx.fill()
     // 手臂/武器
     ctx.save()
     ctx.translate(p.x, p.y)
     ctx.rotate(p.aim)
     ctx.fillStyle = '#1f4fb8'
-    ctx.fillRect(2, -1.5, 6, 3)
+    ctx.fillRect(3, -2, 9, 4)
     ctx.fillStyle = '#f4c542'
-    ctx.fillRect(7, -1.5, 3, 3)
+    ctx.fillRect(11, -2, 4, 4)
     ctx.restore()
     ctx.save()
     ctx.translate(Math.round(p.x), Math.round(p.y))
-    if (p.faceLeft) ctx.scale(-1, 1)
+    if (p.faceLeft) ctx.scale(-1.5, 1.5)
+    else ctx.scale(1.5, 1.5)
     ctx.drawImage(spr, -spr.width / 2, -spr.height / 2)
     ctx.restore()
   }
@@ -1590,10 +1594,10 @@ export class Game {
     const lv = LEVELS[this.levelIdx]!
     ctx.fillText(`第${this.levelIdx + 1}关 ${lv.era} · ${lv.projName} 强化×${this.weapon.upgrades}`, VIEW_W / 2, HUD_Y + 9)
 
-    // 小地图（右上）：十字布局 = 大厅三门 + 底部关底
+    // 小地图（右上）：大厅居中 + 四门房 + 底部关底
     const mm = { x: VIEW_W - 34, y: 4 }
     const cell = 7
-    const sideState = (side: 'L' | 'R' | 'T'): string => {
+    const sideState = (side: 'L' | 'R' | 'T' | 'R2'): string => {
       const key = this.sideRoom[side]
       const r = this.rooms[key]
       if (this.current?.key === key) return 'cur'
@@ -1601,11 +1605,12 @@ export class Game {
       return 'un'
     }
     const pos: [number, number, string][] = [
-      [1, 1, sideState('T')],
+      [1, 0, sideState('T')],
       [0, 1, sideState('L')],
       [2, 1, sideState('R')],
-      [1, 0, this.current?.key === 'hub' ? 'cur' : 'hub'],
-      [1, 2, this.current?.key === 'final' || this.current?.key === 'boss' ? 'cur' : this.clearedCombat.size >= 3 ? 'ok' : 'lock'],
+      [2, 2, sideState('R2')],
+      [1, 1, this.current?.key === 'hub' ? 'cur' : 'hub'],
+      [1, 2, this.current?.key === 'final' || this.current?.key === 'boss' ? 'cur' : this.clearedCombat.size >= 4 ? 'ok' : 'lock'],
     ]
     for (const [cx, cy, st] of pos) {
       ctx.fillStyle = st === 'cur' ? '#ffffff' : st === 'ok' ? '#ffd23f' : st === 'lock' ? '#9c2a22' : st === 'hub' ? '#8a8f98' : '#3a3d46'

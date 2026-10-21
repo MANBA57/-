@@ -43,6 +43,23 @@ export interface StickState {
   vec: Vec | null
 }
 
+/** 可改键的键位（存 code，如 KeyW / ArrowUp / Space） */
+export interface KeyBindings {
+  up: string
+  down: string
+  left: string
+  right: string
+  interact: string
+}
+
+export const DEFAULT_KEYS: KeyBindings = {
+  up: 'KeyW',
+  down: 'KeyS',
+  left: 'KeyA',
+  right: 'KeyD',
+  interact: 'KeyE',
+}
+
 export class Input {
   private keys = new Set<string>()
   /** 指针在画布逻辑坐标系（480×270）中的位置与按下状态 */
@@ -51,6 +68,8 @@ export class Input {
   /** 移动端虚拟摇杆：左移动 / 右瞄准射击，由 React 层注入 */
   stickMove: Vec | null = null
   stickAim: Vec | null = null
+  /** 当前键位（设置面板可热更新；方向键始终作为兜底） */
+  keymap: KeyBindings = { ...DEFAULT_KEYS }
 
   constructor(private target: HTMLElement) {
     window.addEventListener('keydown', this.onKeyDown)
@@ -107,10 +126,11 @@ export class Input {
   moveAxis(): Vec {
     let x = 0
     let y = 0
-    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) x -= 1
-    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) x += 1
-    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) y -= 1
-    if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) y += 1
+    const k = this.keymap
+    if (this.keys.has(k.left) || this.keys.has('ArrowLeft')) x -= 1
+    if (this.keys.has(k.right) || this.keys.has('ArrowRight')) x += 1
+    if (this.keys.has(k.up) || this.keys.has('ArrowUp')) y -= 1
+    if (this.keys.has(k.down) || this.keys.has('ArrowDown')) y += 1
     if (x === 0 && y === 0 && this.stickMove) return this.stickMove
     const l = Math.hypot(x, y)
     return l > 0 ? { x: x / l, y: y / l } : { x: 0, y: 0 }
@@ -170,6 +190,13 @@ export class Sfx {
   private ctx: AudioContext | null = null
   private master: GainNode | null = null
   muted = false
+  /** 主音量 0~1（设置面板可调，实时生效） */
+  volume = 1
+
+  setVolume(v: number): void {
+    this.volume = Math.max(0, Math.min(1, v))
+    if (this.master) this.master.gain.value = 0.14 * this.volume
+  }
 
   unlock(): void {
     if (this.ctx) {
@@ -181,7 +208,7 @@ export class Sfx {
       if (!AC) return
       this.ctx = new AC()
       this.master = this.ctx.createGain()
-      this.master.gain.value = 0.14
+      this.master.gain.value = 0.14 * this.volume
       this.master.connect(this.ctx.destination)
     } catch {
       this.ctx = null

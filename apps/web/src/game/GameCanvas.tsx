@@ -4,7 +4,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Game, VIEW_W, VIEW_H } from './game'
+import { Game, VIEW_W, VIEW_H, DEFAULT_KEYS, type KeyBindings } from './game'
 import { LEVELS, UPGRADE_CYCLE, UPGRADE_LABEL } from './data/levels'
 import { CHEST_COINS, type ChestCoin } from './data/coins'
 import { QUESTIONS, type QuizQuestion } from './data/questions'
@@ -18,6 +18,10 @@ import {
   loadRun,
   saveRun,
   clearRun,
+  loadKeys,
+  saveKeys,
+  loadVol,
+  saveVol,
   type RunState,
 } from './save'
 
@@ -94,6 +98,8 @@ function TitleScreen({
 }) {
   const best = loadBest()
   const collected = loadCollection().length
+  const keys = loadKeys()
+  const [settingsOpen, setSettingsOpen] = useState(false)
   return (
     <Shell onExit={onExit} dim>
       <div className="flex h-full flex-col items-center justify-center gap-5 px-6 text-center">
@@ -129,13 +135,23 @@ function TitleScreen({
           >
             {best > 0 ? '从头开始' : '开始探索'}
           </button>
+          <button
+            type="button"
+            className="btn-game-ghost px-6 py-1.5 text-caption"
+            onClick={() => setSettingsOpen(true)}
+          >
+            设置
+          </button>
         </div>
 
         <p className="max-w-md text-micro leading-relaxed text-[#8a8f98]">
-          {IS_TOUCH ? '左摇杆移动，右摇杆瞄准射击；清空敌人后开箱答题，答对强化武器。' : 'WASD / 方向键移动，鼠标瞄准，按住左键射击，E 开箱，Esc 暂停。'}
+          {IS_TOUCH
+            ? '左摇杆移动，右摇杆瞄准射击；清空敌人后开箱答题，答对强化武器。'
+            : `${keyLabel(keys.up)}${keyLabel(keys.left)}${keyLabel(keys.down)}${keyLabel(keys.right)} / 方向键移动，鼠标瞄准，按住左键射击，${keyLabel(keys.interact)} 开箱，Esc 暂停。`}
           {collected > 0 ? `　图鉴已集 ${collected} / 42。` : ''}
         </p>
       </div>
+      {settingsOpen ? <SettingsPanel onClose={() => setSettingsOpen(false)} /> : null}
     </Shell>
   )
 }
@@ -163,6 +179,18 @@ function GameStage({
   const [prompt, setPrompt] = useState<string | null>(null)
   const [sfxOn, setSfxOn] = useState(loadSfx())
   const [collectedCount, setCollectedCount] = useState(loadCollection().length)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const settingsOpenRef = useRef(false)
+  useEffect(() => {
+    settingsOpenRef.current = settingsOpen
+  }, [settingsOpen])
+  const applySettings = useCallback((keys: KeyBindings, vol: number): void => {
+    const g = gameRef.current
+    if (g) {
+      g.input.keymap = { ...keys }
+      g.sfx.setVolume(vol)
+    }
+  }, [])
 
   /** 每关的题目洗牌牌堆（宝箱按序抽取） */
   const deckRef = useRef<number[]>([])
@@ -223,6 +251,9 @@ function GameStage({
       startLevel,
     )
     gameRef.current = game
+    // 已存设置：键位 + 音量
+    game.input.keymap = loadKeys()
+    game.sfx.setVolume(loadVol())
     // 续玩：恢复上次的武器与血量上限（与死亡重试保留武器的规则一致）
     if (carry) {
       game.weapon = { ...carry.weapon }
@@ -253,6 +284,7 @@ function GameStage({
   // Esc / P 暂停
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      if (settingsOpenRef.current) return
       if (e.code !== 'Escape' && e.code !== 'KeyP') return
       setPhase((p) => {
         const game = gameRef.current
@@ -368,11 +400,19 @@ function GameStage({
             >
               重玩本关
             </button>
+            <button type="button" className="btn-game-ghost px-8 py-2" onClick={() => setSettingsOpen(true)}>
+              设置
+            </button>
             <button type="button" className="btn-game-ghost px-8 py-2" onClick={onBackTitle}>
               返回封面
             </button>
           </div>
         </Overlay>
+      ) : null}
+
+      {/* 设置 */}
+      {settingsOpen ? (
+        <SettingsPanel onClose={() => setSettingsOpen(false)} onApply={applySettings} />
       ) : null}
 
       {/* 过关 */}
@@ -639,5 +679,132 @@ function Joystick({
       />
       <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-micro text-[#8a8f98]">{label}</span>
     </div>
+  )
+}
+
+/* ------------------------------------------------------------ 设置 */
+
+const KEY_SLOTS: { slot: keyof KeyBindings; label: string }[] = [
+  { slot: 'up', label: '上移' },
+  { slot: 'left', label: '左移' },
+  { slot: 'down', label: '下移' },
+  { slot: 'right', label: '右移' },
+  { slot: 'interact', label: '开箱 / 互动' },
+]
+
+function keyLabel(code: string): string {
+  if (code.startsWith('Key')) return code.slice(3)
+  if (code.startsWith('Digit')) return code.slice(5)
+  const map: Record<string, string> = {
+    ArrowUp: '↑',
+    ArrowDown: '↓',
+    ArrowLeft: '←',
+    ArrowRight: '→',
+    Space: '空格',
+    ShiftLeft: 'L Shift',
+    ShiftRight: 'R Shift',
+    Enter: '回车',
+    Semicolon: ';',
+    Quote: "'",
+    Comma: ',',
+    Period: '.',
+    Slash: '/',
+    Minus: '-',
+    Equal: '=',
+  }
+  return map[code] ?? code
+}
+
+function SettingsPanel({
+  onClose,
+  onApply,
+}: {
+  onClose: () => void
+  /** 每次改动后回调（GameStage 热套到游戏实例） */
+  onApply?: (keys: KeyBindings, vol: number) => void
+}) {
+  const [keys, setKeys] = useState<KeyBindings>(() => loadKeys())
+  const [vol, setVol] = useState<number>(() => loadVol())
+  const [listening, setListening] = useState<keyof KeyBindings | null>(null)
+
+  // 拦截全部按键：改键捕获 / Esc 关面板 / 防漏进游戏
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      if (listening) {
+        if (e.code !== 'Escape') setKeys((k) => ({ ...k, [listening]: e.code }))
+        setListening(null)
+      } else if (e.code === 'Escape') {
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', onKey, { capture: true })
+    return () => window.removeEventListener('keydown', onKey, { capture: true } as EventListenerOptions)
+  }, [listening, onClose])
+
+  useEffect(() => {
+    saveKeys(keys)
+    saveVol(vol)
+    onApply?.(keys, vol)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keys, vol])
+
+  return (
+    <Overlay>
+      <h2 className="text-display font-bold text-[#ffd23f]">设置</h2>
+      <div className="w-72 space-y-4 text-left">
+        <div className="space-y-1">
+          <p className="text-micro text-[#8a8f98]">音效音量</p>
+          <div className="flex items-center gap-2">
+            <span className="text-micro">♪</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={10}
+              value={Math.round(vol * 100)}
+              onChange={(e) => setVol(Number(e.target.value) / 100)}
+              className="h-1.5 w-full accent-[#ffd23f]"
+            />
+            <span className="w-8 text-right text-micro text-[#c8cdd8]">{Math.round(vol * 100)}</span>
+          </div>
+        </div>
+
+        {!IS_TOUCH ? (
+          <div className="space-y-1.5">
+            <p className="text-micro leading-relaxed text-[#8a8f98]">键位（点击后按新键；方向键始终可用）</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {KEY_SLOTS.map(({ slot, label }) => (
+                <button
+                  key={slot}
+                  type="button"
+                  className={`flex items-center justify-between px-2 py-1.5 text-micro ${
+                    listening === slot ? 'btn-game animate-pulse' : 'btn-game-ghost'
+                  }`}
+                  onClick={() => setListening(listening === slot ? null : slot)}
+                >
+                  <span>{label}</span>
+                  <span className={listening === slot ? 'text-[#1b1c24]' : 'text-[#ffd23f]'}>
+                    {listening === slot ? '按新键…' : keyLabel(keys[slot])}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="btn-game-ghost w-full py-1 text-micro"
+              onClick={() => setKeys({ ...DEFAULT_KEYS })}
+            >
+              恢复默认键位
+            </button>
+          </div>
+        ) : null}
+
+        <button type="button" className="btn-game w-full py-2" onClick={onClose}>
+          完成
+        </button>
+      </div>
+    </Overlay>
   )
 }
