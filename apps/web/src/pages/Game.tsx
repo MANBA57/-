@@ -13,7 +13,9 @@ export default function Game() {
     <GameCanvas
       startLevel={start}
       onExit={() => {
-        if (window.history.length > 1) navigate(-1)
+        // 只有站内跳转过来的才走历史后退；直达/恢复的标签页里 navigate(-1) 会甩出网站
+        const idx = (window.history.state as { idx?: number } | null)?.idx ?? -1
+        if (idx > 0) navigate(-1)
         else navigate('/', { replace: true })
       }}
     />

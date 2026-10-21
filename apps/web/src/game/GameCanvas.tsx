@@ -4,6 +4,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Capacitor } from '@capacitor/core'
 import { ScreenOrientation } from '@capacitor/screen-orientation'
 import { Game, VIEW_W, VIEW_H, DEFAULT_KEYS, type KeyBindings } from './game'
 import { LEVELS, UPGRADE_CYCLE, UPGRADE_LABEL } from './data/levels'
@@ -35,6 +36,21 @@ interface Props {
   onExit: () => void
 }
 
+/** 触屏网页端：借"开始游戏"的点击手势进全屏并锁横屏（安卓浏览器会自动转横；iOS 请转动机身） */
+function enterFullscreenLandscape(): void {
+  if (!IS_TOUCH || Capacitor.isNativePlatform()) return
+  const el = document.documentElement as HTMLElement & {
+    requestFullscreen?: () => Promise<void> | void
+  }
+  const r = el.requestFullscreen?.()
+  const orientation = screen.orientation as ScreenOrientation & {
+    lock?: (orientation: string) => Promise<void>
+  } | null
+  Promise.resolve(r)
+    .then(() => orientation?.lock?.('landscape'))
+    .catch(() => {})
+}
+
 type Phase = 'title' | 'play' | 'quiz' | 'clear' | 'dead' | 'victory' | 'paused' | 'story'
 
 interface QuizState {
@@ -60,6 +76,8 @@ export default function GameCanvas({ startLevel = 0, onExit }: Props) {
       .catch(() => {})
     return () => {
       if (locked) ScreenOrientation.unlock().catch(() => {})
+      // 网页端全屏打完收工：离开游戏时还原
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
     }
   }, [])
   const [phase, setPhase] = useState<'title' | 'run'>('title')
@@ -135,6 +153,7 @@ function TitleScreen({
               type="button"
               className="btn-game px-8 py-2 text-body"
               onClick={() => {
+                enterFullscreenLandscape()
                 const run = loadRun()
                 onStart(Math.min(best, 6), run && run.level === best ? run : null)
               }}
@@ -146,6 +165,7 @@ function TitleScreen({
             type="button"
             className="btn-game px-8 py-2 text-body"
             onClick={() => {
+              enterFullscreenLandscape()
               clearRun()
               onStart(startLevel)
             }}
@@ -372,6 +392,16 @@ function GameStage({
       {/* 触屏摇杆 */}
       {IS_TOUCH && phase === 'play' ? (
         <>
+          <button
+            type="button"
+            className="btn-game-ghost absolute right-2 top-2 z-30 px-3 py-1 text-micro"
+            onClick={() => {
+              gameRef.current?.pause()
+              setPhase('paused')
+            }}
+          >
+            ⏸ 暂停
+          </button>
           <Joystick className="left-4" onChange={(v) => setStick('move', v)} label="移动" />
           <Joystick className="right-4" onChange={(v) => setStick('aim', v)} label="射击" />
           {prompt?.includes('开') ? (
@@ -491,6 +521,7 @@ function GameStage({
             type="button"
             className="btn-game px-10 py-2"
             onClick={() => {
+              enterFullscreenLandscape()
               gameRef.current?.resume()
               setPhase('play')
             }}
@@ -512,6 +543,7 @@ function GameStage({
               type="button"
               className="btn-game px-8 py-2"
               onClick={() => {
+                enterFullscreenLandscape()
                 chestIdxRef.current = 0
                 deckRef.current = []
                 gameRef.current?.retryLevel()
@@ -538,7 +570,14 @@ function GameStage({
             {collectedCount < 42 ? '——去博物馆页面补完图鉴吧' : '，全部集齐！'}。
           </p>
           <div className="flex gap-2">
-            <button type="button" className="btn-game px-8 py-2" onClick={onRestart}>
+            <button
+              type="button"
+              className="btn-game px-8 py-2"
+              onClick={() => {
+                enterFullscreenLandscape()
+                onRestart()
+              }}
+            >
               再来一局
             </button>
             <button type="button" className="btn-game-ghost px-8 py-2" onClick={onExit}>
