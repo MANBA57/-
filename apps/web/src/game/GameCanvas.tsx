@@ -22,6 +22,8 @@ import {
   saveKeys,
   loadVol,
   saveVol,
+  loadAutoAim,
+  saveAutoAim,
   type RunState,
 } from './save'
 
@@ -147,7 +149,7 @@ function TitleScreen({
         <p className="max-w-md text-micro leading-relaxed text-[#8a8f98]">
           {IS_TOUCH
             ? '左摇杆移动，右摇杆瞄准射击；清空敌人后开箱答题，答对强化武器。'
-            : `${keyLabel(keys.up)}${keyLabel(keys.left)}${keyLabel(keys.down)}${keyLabel(keys.right)} / 方向键移动，鼠标瞄准，按住左键射击，${keyLabel(keys.interact)} 开箱，Esc 暂停。`}
+            : `${keyLabel(keys.up)}${keyLabel(keys.left)}${keyLabel(keys.down)}${keyLabel(keys.right)} / 方向键移动，鼠标瞄准，${keys.fire ? `${keyLabel(keys.fire)} 或左键` : '按住左键'}射击，${keyLabel(keys.interact)} 开箱，Esc 暂停。`}
           {collected > 0 ? `　图鉴已集 ${collected} / 42。` : ''}
         </p>
       </div>
@@ -184,11 +186,12 @@ function GameStage({
   useEffect(() => {
     settingsOpenRef.current = settingsOpen
   }, [settingsOpen])
-  const applySettings = useCallback((keys: KeyBindings, vol: number): void => {
+  const applySettings = useCallback((keys: KeyBindings, vol: number, autoAim: boolean): void => {
     const g = gameRef.current
     if (g) {
       g.input.keymap = { ...keys }
       g.sfx.setVolume(vol)
+      g.autoAim = autoAim
     }
   }, [])
 
@@ -251,9 +254,10 @@ function GameStage({
       startLevel,
     )
     gameRef.current = game
-    // 已存设置：键位 + 音量
+    // 已存设置：键位 + 音量 + 自动瞄准
     game.input.keymap = loadKeys()
     game.sfx.setVolume(loadVol())
+    game.autoAim = loadAutoAim()
     // 续玩：恢复上次的武器与血量上限（与死亡重试保留武器的规则一致）
     if (carry) {
       game.weapon = { ...carry.weapon }
@@ -370,7 +374,7 @@ function GameStage({
 
       {/* 答题弹层 */}
       {phase === 'quiz' && quiz ? (
-        <QuizOverlay quiz={quiz} onPick={answerQuiz} onClose={closeQuiz} game={gameRef.current} />
+        <QuizOverlay key={quiz.coin.slug} quiz={quiz} onPick={answerQuiz} onClose={closeQuiz} game={gameRef.current} />
       ) : null}
 
       {/* 暂停 */}
@@ -512,6 +516,8 @@ function QuizOverlay({
   const { question, coin, picked } = quiz
   const answered = picked !== null
   const correct = picked === question.answer
+  const [imgSrc, setImgSrc] = useState(coin.thumb)
+  const [imgErr, setImgErr] = useState(false)
   const upgradeLabel = game
     ? UPGRADE_LABEL[UPGRADE_CYCLE[game.weapon.upgrades % UPGRADE_CYCLE.length]!]
     : ''
@@ -521,14 +527,26 @@ function QuizOverlay({
       <div className="game-panel max-h-full w-full max-w-lg overflow-y-auto p-5">
         {/* 宝箱开出的钱币 */}
         <div className="mb-4 flex items-center gap-4">
-          <img
-            src={coin.thumb}
-            alt={coin.name}
-            width={64}
-            height={64}
-            className="h-16 w-16 shrink-0 rounded-full border border-[#3a3d46] bg-[#1d1e26] object-contain"
-            loading="eager"
-          />
+          {imgErr ? (
+            <div className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-lg border-2 border-[#3a3d46] bg-[#1d1e26]">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#f4c542] shadow-[inset_0_0_0_3px_#c8971e]">
+                <div className="h-3.5 w-3.5 bg-[#1d1e26]" />
+              </div>
+            </div>
+          ) : (
+            <img
+              src={imgSrc}
+              alt={coin.name}
+              width={72}
+              height={72}
+              className="h-[72px] w-[72px] shrink-0 rounded-lg border-2 border-[#3a3d46] bg-[#1d1e26] object-contain p-1"
+              loading="eager"
+              onError={() => {
+                if (!imgSrc.includes('?')) setImgSrc(coin.thumb + '?r=1')
+                else setImgErr(true)
+              }}
+            />
+          )}
           <div className="min-w-0">
             <p className="text-body font-semibold text-[#ffd23f]">
               {coin.name}
@@ -559,7 +577,9 @@ function QuizOverlay({
         {answered ? (
           <div className="mt-4 space-y-3">
             <p className={`text-body font-semibold ${correct ? 'text-[#6ecf7d]' : 'text-[#e0453a]'}`}>
-              {correct ? `答对了！${upgradeLabel} —— 武器更上一层` : `答错了，正确答案是「${question.options[question.answer]}」`}
+              {correct
+                ? `答对了！${upgradeLabel} —— 武器更上一层${game && game.player.hp < game.player.maxHp ? '，血量 +1' : ''}`
+                : `答错了，正确答案是「${question.options[question.answer]}」`}
             </p>
             <p className="text-micro leading-relaxed text-[#8a8f98]">{question.explain}</p>
             <button type="button" className="btn-game w-full py-2" onClick={onClose}>
@@ -567,7 +587,7 @@ function QuizOverlay({
             </button>
           </div>
         ) : (
-          <p className="mt-3 text-center text-micro text-[#8a8f98]">答对可强化武器 · 钱币无论如何都收入图鉴</p>
+          <p className="mt-3 text-center text-micro text-[#8a8f98]">答对可强化武器并回血 · 钱币无论如何都收入图鉴</p>
         )}
       </div>
     </div>
@@ -690,6 +710,7 @@ const KEY_SLOTS: { slot: keyof KeyBindings; label: string }[] = [
   { slot: 'down', label: '下移' },
   { slot: 'right', label: '右移' },
   { slot: 'interact', label: '开箱 / 互动' },
+  { slot: 'fire', label: '攻击' },
 ]
 
 function keyLabel(code: string): string {
@@ -721,10 +742,11 @@ function SettingsPanel({
 }: {
   onClose: () => void
   /** 每次改动后回调（GameStage 热套到游戏实例） */
-  onApply?: (keys: KeyBindings, vol: number) => void
+  onApply?: (keys: KeyBindings, vol: number, autoAim: boolean) => void
 }) {
   const [keys, setKeys] = useState<KeyBindings>(() => loadKeys())
   const [vol, setVol] = useState<number>(() => loadVol())
+  const [autoAim, setAutoAim] = useState<boolean>(() => loadAutoAim())
   const [listening, setListening] = useState<keyof KeyBindings | null>(null)
 
   // 拦截全部按键：改键捕获 / Esc 关面板 / 防漏进游戏
@@ -746,9 +768,10 @@ function SettingsPanel({
   useEffect(() => {
     saveKeys(keys)
     saveVol(vol)
-    onApply?.(keys, vol)
+    saveAutoAim(autoAim)
+    onApply?.(keys, vol, autoAim)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keys, vol])
+  }, [keys, vol, autoAim])
 
   return (
     <Overlay>
@@ -771,6 +794,17 @@ function SettingsPanel({
           </div>
         </div>
 
+        <div className="flex items-center justify-between">
+          <p className="text-micro leading-relaxed text-[#8a8f98]">自动瞄准（锁定最近敌人）</p>
+          <button
+            type="button"
+            className={autoAim ? 'btn-game px-4 py-1 text-micro' : 'btn-game-ghost px-4 py-1 text-micro'}
+            onClick={() => setAutoAim((v) => !v)}
+          >
+            {autoAim ? '开' : '关'}
+          </button>
+        </div>
+
         {!IS_TOUCH ? (
           <div className="space-y-1.5">
             <p className="text-micro leading-relaxed text-[#8a8f98]">键位（点击后按新键；方向键始终可用）</p>
@@ -786,7 +820,7 @@ function SettingsPanel({
                 >
                   <span>{label}</span>
                   <span className={listening === slot ? 'text-[#1b1c24]' : 'text-[#ffd23f]'}>
-                    {listening === slot ? '按新键…' : keyLabel(keys[slot])}
+                    {listening === slot ? '按新键…' : keys[slot] ? keyLabel(keys[slot]) : '鼠标'}
                   </span>
                 </button>
               ))}

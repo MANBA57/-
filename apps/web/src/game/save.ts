@@ -10,6 +10,7 @@ const COLLECTION_KEY = 'coinmuseum:game-collection'
 const SFX_KEY = 'coinmuseum:game-sfx'
 const VOL_KEY = 'coinmuseum:game-vol'
 const KEYS_KEY = 'coinmuseum:game-keys'
+const AUTOAIM_KEY = 'coinmuseum:game-autoaim'
 const RUN_KEY = 'coinmuseum:game-run'
 
 const isBrowser = typeof window !== 'undefined' && typeof localStorage !== 'undefined'
@@ -102,6 +103,24 @@ export function saveVol(v: number): void {
   }
 }
 
+export function loadAutoAim(): boolean {
+  if (!isBrowser) return false
+  try {
+    return localStorage.getItem(AUTOAIM_KEY) === 'on'
+  } catch {
+    return false
+  }
+}
+
+export function saveAutoAim(on: boolean): void {
+  if (!isBrowser) return
+  try {
+    localStorage.setItem(AUTOAIM_KEY, on ? 'on' : 'off')
+  } catch {
+    /* 忽略 */
+  }
+}
+
 export function loadKeys(): KeyBindings {
   if (!isBrowser) return { ...DEFAULT_KEYS }
   try {
@@ -109,7 +128,7 @@ export function loadKeys(): KeyBindings {
     if (!raw) return { ...DEFAULT_KEYS }
     const k = JSON.parse(raw) as Partial<KeyBindings>
     const out = { ...DEFAULT_KEYS }
-    for (const slot of ['up', 'down', 'left', 'right', 'interact'] as const) {
+    for (const slot of ['up', 'down', 'left', 'right', 'interact', 'fire'] as const) {
       if (typeof k[slot] === 'string' && k[slot]) out[slot] = k[slot]!
     }
     return out

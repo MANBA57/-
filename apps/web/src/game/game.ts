@@ -157,6 +157,8 @@ export class Game {
   private ctx: CanvasRenderingContext2D
   /** 摇杆等外部输入注入点（公开给 React 壳的虚拟摇杆） */
   input: Input
+  /** 自动瞄准最近敌人（设置面板开关） */
+  autoAim = false
   sfx = new Sfx()
   private rng = new Rng(1)
   private particles = new Particles()
@@ -545,7 +547,7 @@ export class Game {
       const spd = 108
       this.moveCircle(p, ax.x * spd * dt, ax.y * spd * dt, false)
     }
-    p.aim = this.input.aimFrom(p.x, p.y)
+    p.aim = this.autoAim ? this.autoAimAngle(p.x, p.y) : this.input.aimFrom(p.x, p.y)
     p.faceLeft = Math.cos(p.aim) < 0
 
     // 射击
@@ -884,6 +886,23 @@ export class Game {
     }
   }
 
+  /** 自动瞄准：最近的可命中目标（含 BOSS）；无目标时退回手动瞄准。 */
+  private autoAimAngle(px: number, py: number): number {
+    let best: { x: number; y: number } | null = null
+    let bd = Infinity
+    for (const e of this.enemies) {
+      if (e.spawnT > 0) continue
+      const d = dist(px, py, e.x, e.y)
+      if (d < bd) { bd = d; best = e }
+    }
+    const b = this.boss
+    if (b && !b.dead) {
+      const d = dist(px, py, b.x, b.y)
+      if (d < bd) { bd = d; best = b }
+    }
+    return best ? Math.atan2(best.y - py, best.x - px) : this.input.aimFrom(px, py)
+  }
+
   private hurtPlayer(kx: number, ky: number): void {
     const p = this.player
     p.hp -= 1
@@ -1145,7 +1164,8 @@ export class Game {
             if (e.hp <= 0) {
               this.particles.burst(e.x, e.y, ERA_PALETTES[this.levelIdx]!.tint, 12, 90, 0.5)
               this.sfx.play('enemyDie')
-              if (this.rng.next() < 0.16 && p.hp < p.maxHp) this.pickups.push({ x: e.x, y: e.y, t: 0 })
+              // 回血来源之一：敌人掉红心（精英必掉）
+              if ((e.elite || this.rng.next() < 0.28) && p.hp < p.maxHp) this.pickups.push({ x: e.x, y: e.y, t: 0 })
             }
             if (b.pierce > 0) b.pierce -= 1
             else b.life = 0
@@ -1203,9 +1223,13 @@ export class Game {
     this.cb.onChest()
   }
 
-  /** React 答题弹层关闭时回调：correct = 答对则强化武器。 */
+  /** React 答题弹层关闭时回调：correct = 答对则强化武器并回血 1 点。 */
   answerChest(correct: boolean): void {
-    if (correct) this.applyUpgrade()
+    if (correct) {
+      this.applyUpgrade()
+      if (this.player.hp < this.player.maxHp) this.player.hp += 1
+      this.sfx.play('heart')
+    }
     this.setPrompt(null)
     this.paused = false
     this.lastT = performance.now()

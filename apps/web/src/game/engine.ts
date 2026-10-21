@@ -43,13 +43,14 @@ export interface StickState {
   vec: Vec | null
 }
 
-/** 可改键的键位（存 code，如 KeyW / ArrowUp / Space） */
+/** 可改键的键位（存 code，如 KeyW / ArrowUp / Space）；fire 空串 = 仅鼠标/摇杆 */
 export interface KeyBindings {
   up: string
   down: string
   left: string
   right: string
   interact: string
+  fire: string
 }
 
 export const DEFAULT_KEYS: KeyBindings = {
@@ -58,6 +59,7 @@ export const DEFAULT_KEYS: KeyBindings = {
   left: 'KeyA',
   right: 'KeyD',
   interact: 'KeyE',
+  fire: '',
 }
 
 export class Input {
@@ -136,9 +138,9 @@ export class Input {
     return l > 0 ? { x: x / l, y: y / l } : { x: 0, y: 0 }
   }
 
-  /** 是否按住射击：鼠标按住或右摇杆推出。 */
+  /** 是否按住射击：鼠标按住、右摇杆推出，或自定义攻击键按住。 */
   firing(): boolean {
-    return this.pointer.down || this.stickAim !== null
+    return this.pointer.down || this.stickAim !== null || (this.keymap.fire !== '' && this.keys.has(this.keymap.fire))
   }
 
   /** 瞄准方向（世界坐标）。 */
