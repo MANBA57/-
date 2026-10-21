@@ -240,6 +240,7 @@ export class Game {
     maxHp: 5,
     iframe: 0,
     fireCd: 0,
+    dustT: 0,
     anim: 0,
     moving: false,
     faceLeft: false,
@@ -271,6 +272,16 @@ export class Game {
   private scorches: { x: number; y: number; r: number; life: number }[] = []
   /** 预警圈：倒计时归零时按 dmg 爆炸（0 = 纯视觉） */
   private hazards: { x: number; y: number; r: number; t: number; t0: number; dmg: number }[] = []
+  /** 顿帧 / 慢动作（打击感） */
+  private slowT = 0
+  private slowScale = 1
+  /** BOSS 死亡白闪 / 受击红晕 */
+  private whiteFlash = 0
+  private hurtFlash = 0
+  /** 环境浮尘 / 传送门·宝箱粒子节拍 */
+  private motes: { x: number; y: number; vx: number; vy: number }[] = []
+  private portalT = 0
+  private chestT = 0
   private boss: Boss | null = null
   private nextId = 1
 
@@ -544,6 +555,18 @@ export class Game {
     this.boomRings = []
     this.orbitOn = false
     this.burstLeft = 0
+    // 环境浮尘重新铺一层
+    this.motes = []
+    if (!REDUCED_MOTION) {
+      for (let i = 0; i < 12; i++) {
+        this.motes.push({
+          x: this.rng.range(10, VIEW_W - 10),
+          y: this.rng.range(20, ROOM_H_PX - 10),
+          vx: this.rng.range(-3, 3),
+          vy: this.rng.range(-2.5, 1.5),
+        })
+      }
+    }
 
     const isCombat = room.waves.length > 0
     const isBoss = room.bossAnchor !== null
@@ -609,11 +632,26 @@ export class Game {
       this.acc += dtRaw
       const dt = 1 / 60
       while (this.acc >= dt) {
-        this.update(dt)
+        // 顿帧 / BOSS 死亡慢动作：缩短本帧步长
+        let step = dt
+        if (this.slowT > 0) {
+          this.slowT -= dt
+          step = dt * this.slowScale
+        }
+        this.update(step)
         this.acc -= dt
       }
     }
     this.render()
+  }
+
+  /** 打击感顿帧：短暂压低 timeScale。 */
+  private hitStop(t: number, scale: number): void {
+    if (REDUCED_MOTION) return
+    if (this.slowT <= 0 || scale < this.slowScale) {
+      this.slowT = Math.max(this.slowT, t)
+      this.slowScale = scale
+    }
   }
 
   private update(dt: number): void {
@@ -621,6 +659,8 @@ export class Game {
     this.fade = clamp(this.fade + this.fadeDir * dt * 5.5, 0, 1)
     if (this.shake > 0) this.shake -= dt
     this.energyFlash = Math.max(0, this.energyFlash - dt)
+    this.whiteFlash = Math.max(0, this.whiteFlash - dt * 1.6)
+    this.hurtFlash = Math.max(0, this.hurtFlash - dt * 3)
     if (this.banner) {
       this.banner.t -= dt
       if (this.banner.t <= 0) this.banner = null
@@ -637,6 +677,58 @@ export class Game {
       this.pendingTransition = null
       this.enterRoom(room, tx, ty)
       this.fadeDir = -1
+    }
+
+    // 环境浮尘漂移（越界回绕）
+    for (const m of this.motes) {
+      m.x += m.vx * dt
+      m.y += m.vy * dt
+      if (m.x < 8) m.x = VIEW_W - 8
+      else if (m.x > VIEW_W - 8) m.x = 8
+      if (m.y < 20) m.y = ROOM_H_PX - 8
+      else if (m.y > ROOM_H_PX - 8) m.y = 20
+    }
+    // 传送门漩涡粒子
+    const portal = this.current?.portal
+    if (portal && !REDUCED_MOTION) {
+      this.portalT -= dt
+      if (this.portalT <= 0) {
+        this.portalT = 0.05
+        for (let k = 0; k < 2; k++) {
+          const ang = this.time * 4 + k * Math.PI
+          const rr = 10 + Math.sin(this.time * 2 + k) * 4
+          this.particles.list.push({
+            x: portal.x + Math.cos(ang) * rr,
+            y: portal.y + Math.sin(ang) * rr,
+            vx: -Math.sin(ang) * 18,
+            vy: Math.cos(ang) * 18,
+            life: 0.4,
+            max: 0.4,
+            color: k === 0 ? '#ffd23f' : '#f5f5f7',
+            size: 1,
+            gravity: 0,
+          })
+        }
+      }
+    }
+    // 宝箱流光（解锁未开时）
+    const room = this.current
+    if (room?.chest && !room.chest.opened && room.cleared && !REDUCED_MOTION) {
+      this.chestT -= dt
+      if (this.chestT <= 0) {
+        this.chestT = 0.7
+        this.particles.list.push({
+          x: room.chest.x + (this.rng.next() - 0.5) * 12,
+          y: room.chest.y - 6,
+          vx: 0,
+          vy: -14,
+          life: 0.6,
+          max: 0.6,
+          color: '#ffd23f',
+          size: 1,
+          gravity: 0,
+        })
+      }
     }
 
     if (this.fade < 0.9) this.updatePlayer(dt)
@@ -669,6 +761,22 @@ export class Game {
       p.anim += dt
       const spd = 108
       this.moveCircle(p, ax.x * spd * dt, ax.y * spd * dt, false)
+      // 脚步扬尘
+      p.dustT -= dt
+      if (p.dustT <= 0 && !REDUCED_MOTION) {
+        p.dustT = 0.16
+        this.particles.list.push({
+          x: p.x - ax.x * 5 + (this.rng.next() - 0.5) * 3,
+          y: p.y + 4,
+          vx: -ax.x * 12 + (this.rng.next() - 0.5) * 8,
+          vy: -5,
+          life: 0.28,
+          max: 0.28,
+          color: '#8d8574',
+          size: 1,
+          gravity: 0,
+        })
+      }
     }
     p.aim = this.autoAim ? this.autoAimAngle(p.x, p.y) : this.input.aimFrom(p.x, p.y)
     p.faceLeft = Math.cos(p.aim) < 0
@@ -758,6 +866,22 @@ export class Game {
   private fireWeapon(def: WeaponDef): void {
     const p = this.player
     const a0 = p.aim
+    // 弹壳抛出（远程武器）：垂直方向弹出带重力的小壳粒
+    if (!REDUCED_MOTION && def.pattern !== 'slash' && def.pattern !== 'orbit' && def.pattern !== 'slam') {
+      const side = this.rng.next() < 0.5 ? 1 : -1
+      const ca = a0 + (Math.PI / 2) * side
+      this.particles.list.push({
+        x: p.x + Math.cos(a0) * 4,
+        y: p.y + Math.sin(a0) * 4,
+        vx: Math.cos(ca) * 34,
+        vy: Math.sin(ca) * 34 - 26,
+        life: 0.45,
+        max: 0.45,
+        color: '#c8971e',
+        size: 1,
+        gravity: 300,
+      })
+    }
     switch (def.pattern) {
       case 'single': {
         const n = this.weapon.projectiles
@@ -1258,8 +1382,10 @@ export class Game {
     p.hp -= 1
     p.iframe = 1.1
     this.sfx.play('playerHurt')
-    this.shake = REDUCED_MOTION ? 0 : 0.35
-    this.particles.burst(p.x, p.y, '#e0453a', 10, 80)
+    this.hurtFlash = 0.35
+    this.shake = REDUCED_MOTION ? 0 : 0.45
+    this.particles.burst(p.x, p.y, '#e0453a', 14, 90, 0.45, 2)
+    this.particles.burst(p.x, p.y, '#ffffff', 4, 60, 0.3)
     // 击退
     this.moveCircle(p, -kx * 14, -ky * 14, false)
     if (p.hp <= 0) {
@@ -1273,7 +1399,24 @@ export class Game {
   private enemyDie(e: Enemy): void {
     const p = this.player
     this.particles.burst(e.x, e.y, ERA_PALETTES[this.levelIdx]!.tint, 12, 90, 0.5)
-    this.particles.burst(e.x, e.y, '#ffd23f', 6, 70, 0.45)
+    this.particles.burst(e.x, e.y, '#ffd23f', 10, 70, 0.45)
+    // 金币雨：带重力散落
+    if (!REDUCED_MOTION) {
+      for (let i = 0; i < 5; i++) {
+        this.particles.list.push({
+          x: e.x,
+          y: e.y,
+          vx: this.rng.range(-45, 45),
+          vy: this.rng.range(-70, -25),
+          life: 0.55,
+          max: 0.55,
+          color: i % 2 === 0 ? '#ffd23f' : '#c8971e',
+          size: 2,
+          gravity: 230,
+        })
+      }
+    }
+    if (e.elite) this.hitStop(0.06, 0.25)
     this.sfx.play('enemyDie')
     // 竹钱妖被提前击杀：小爆只伤小怪（不伤玩家），可连锁
     if (e.arch === 'bomb' && e.state !== 2) {
@@ -1373,7 +1516,15 @@ export class Game {
     if (b.hp <= 0) {
       b.hp = 0
       b.dead = true
-      this.shake = REDUCED_MOTION ? 0 : 0.9
+      // 死亡慢动作 + 白闪 + 双冲击环
+      this.shake = REDUCED_MOTION ? 0 : 1.6
+      this.slowT = REDUCED_MOTION ? 0 : 0.5
+      this.slowScale = 0.3
+      this.whiteFlash = 0.5
+      if (!REDUCED_MOTION) {
+        this.boomRings.push({ x: b.x, y: b.y, max: b.r * 3, t: 0 })
+        this.boomRings.push({ x: b.x, y: b.y, max: b.r * 4.5, t: -0.12 })
+      }
       this.sfx.play('boss')
     }
   }
@@ -2084,6 +2235,7 @@ export class Game {
             if (crit) {
               this.particles.burst(b.x, b.y, '#ffffff', 8, 90, 0.35)
               this.shake = Math.max(this.shake, REDUCED_MOTION ? 0 : 0.25)
+              this.hitStop(0.06, 0.2)
             } else {
               this.particles.burst(b.x, b.y, b.trailC ?? ERA_PALETTES[this.levelIdx]!.tint, 4, 60, 0.3)
             }
@@ -2340,6 +2492,7 @@ export class Game {
 
     this.drawRoomBg(room)
     this.drawScorches()
+    this.drawMotes()
     this.drawDoors(room)
     this.drawHazards()
     if (room.portal) this.drawPortal(room.portal)
@@ -2354,6 +2507,22 @@ export class Game {
     this.drawBoomRings()
     this.drawFloats()
     ctx.restore()
+
+    // 全屏特效：BOSS 死亡白闪 / 受击红晕 / 低血量脉动
+    if (this.whiteFlash > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(0.85, this.whiteFlash * 1.8)})`
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H)
+    }
+    const hurtA = this.hurtFlash / 0.35
+    const lowHp = this.player.hp > 0 && this.player.hp <= 2
+    if (hurtA > 0 || lowHp) {
+      const a = hurtA * 0.38 + (lowHp ? 0.1 + Math.sin(this.time * 5) * 0.07 : 0)
+      const grad = ctx.createRadialGradient(VIEW_W / 2, VIEW_H / 2, VIEW_H * 0.35, VIEW_W / 2, VIEW_H / 2, VIEW_H * 0.75)
+      grad.addColorStop(0, 'rgba(224,69,58,0)')
+      grad.addColorStop(1, `rgba(224,69,58,${a})`)
+      ctx.fillStyle = grad
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H)
+    }
 
     this.drawHud()
     this.drawBanner()
@@ -2489,6 +2658,7 @@ export class Game {
   private drawBoomRings(): void {
     const ctx = this.ctx
     for (const r of this.boomRings) {
+      if (r.t < 0) continue // 负延迟（BOSS 死亡第二环）
       const k = r.t / 0.35
       ctx.globalAlpha = 1 - k
       ctx.strokeStyle = '#ffd23f'
@@ -2499,6 +2669,15 @@ export class Game {
       ctx.globalAlpha = 1
       ctx.lineWidth = 1
     }
+  }
+
+  /** 环境浮尘：缓慢漂浮的微光点。 */
+  private drawMotes(): void {
+    const ctx = this.ctx
+    ctx.globalAlpha = 0.22 + Math.sin(this.time * 2) * 0.06
+    ctx.fillStyle = '#e8e4d8'
+    for (const m of this.motes) ctx.fillRect(Math.round(m.x), Math.round(m.y), 1, 1)
+    ctx.globalAlpha = 1
   }
 
   private drawPickups(): void {
@@ -2816,6 +2995,11 @@ export class Game {
     ctx.fillRect(ex - 1, ey - 1, ew + 2, 4)
     ctx.fillStyle = low ? '#e0453a' : ratio >= 0.999 ? '#ffd23f' : '#43d0ff'
     ctx.fillRect(ex, ey, Math.round(ew * ratio), 2)
+    if (ratio >= 0.999 && !low) {
+      // 满能量：条顶亮光线
+      ctx.fillStyle = '#aef1ff'
+      ctx.fillRect(ex, ey - 1, Math.round(ew), 1)
+    }
     if (low) {
       ctx.fillStyle = '#e0453a'
       ctx.font = 'bold 6px "PingFang SC", "Microsoft YaHei", sans-serif'

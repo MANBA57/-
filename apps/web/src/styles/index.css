@@ -472,6 +472,7 @@
 
 .game-canvas {
   image-rendering: pixelated;
+  object-fit: contain;
 }
 
 .btn-game {
@@ -539,6 +540,15 @@
 
 .game-joystick {
   touch-action: none;
+}
+
+/* 触屏设备：按钮最小 44px 触控目标 */
+@media (pointer: coarse) {
+  .btn-game,
+  .btn-game-ghost,
+  .game-egg-coin {
+    min-height: 44px;
+  }
 }
 
 /* 关于页底部的像素铜钱彩蛋入口 */

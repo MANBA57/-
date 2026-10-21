@@ -4,6 +4,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { ScreenOrientation } from '@capacitor/screen-orientation'
 import { Game, VIEW_W, VIEW_H, DEFAULT_KEYS, type KeyBindings } from './game'
 import { LEVELS, UPGRADE_CYCLE, UPGRADE_LABEL } from './data/levels'
 import { WEAPONS, WEAPON_OFFERS, type WeaponDef } from './data/weapons'
@@ -42,13 +43,25 @@ interface QuizState {
   picked: number | null
 }
 
-/** 触屏判定：粗指针设备显示双摇杆 */
+/** 触屏判定：粗指针设备显示双摇杆；?touch=1 可在桌面模拟触屏（验证用） */
 const IS_TOUCH =
-  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-    ? window.matchMedia('(pointer: coarse)').matches
-    : false
+  typeof window !== 'undefined' &&
+  (new URLSearchParams(window.location.search).has('touch') ||
+    (typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches))
 
 export default function GameCanvas({ startLevel = 0, onExit }: Props) {
+  // 游戏默认横屏：APK 内进入时锁定 landscape，离开时解除（网页端静默失败）
+  useEffect(() => {
+    let locked = false
+    ScreenOrientation.lock({ orientation: 'landscape' })
+      .then(() => {
+        locked = true
+      })
+      .catch(() => {})
+    return () => {
+      if (locked) ScreenOrientation.unlock().catch(() => {})
+    }
+  }, [])
   const [phase, setPhase] = useState<'title' | 'run'>('title')
   const [runLevel, setRunLevel] = useState(startLevel)
   const [runKey, setRunKey] = useState(0)
@@ -364,7 +377,7 @@ function GameStage({
           {prompt?.includes('开') ? (
             <button
               type="button"
-              className="btn-game absolute bottom-24 left-1/2 z-10 -translate-x-1/2 px-6 py-2 text-body"
+              className="btn-game fixed bottom-[max(96px,calc(env(safe-area-inset-bottom)+72px))] left-1/2 z-10 -translate-x-1/2 px-6 py-2 text-body"
               onClick={() => gameRef.current?.requestInteract()}
             >
               开启宝箱
@@ -388,7 +401,7 @@ function GameStage({
       {/* 暂停 */}
       {phase === 'paused' ? (
         <Overlay>
-          <h2 className="text-display font-bold text-[#ffd23f]">暂停</h2>
+          <h2 className="text-[26px] sm:text-[40px] font-bold text-[#ffd23f]">暂停</h2>
           <div className="flex flex-col gap-2">
             <button
               type="button"
@@ -433,7 +446,7 @@ function GameStage({
           <p className="text-caption text-[#8a8f98]">
             第 {clearLevel + 1} 关 · {LEVELS[clearLevel]?.era} 通过
           </p>
-          <h2 className="text-display font-bold text-[#ffd23f]">钱路向前！</h2>
+          <h2 className="text-[26px] sm:text-[40px] font-bold text-[#ffd23f]">钱路向前！</h2>
           <div className="space-y-1 text-center text-body text-[#c8cdd8]">
             <p>
               弹丸进化：<span className="text-[#f5f5f7]">{LEVELS[clearLevel]?.projName}</span> →{' '}
@@ -466,7 +479,7 @@ function GameStage({
           <p className="text-caption text-[#8a8f98]">
             {lv.years} · 第 {levelRef.current + 1} 关
           </p>
-          <h2 className="text-display font-bold text-[#ffd23f]">
+          <h2 className="text-[26px] sm:text-[40px] font-bold text-[#ffd23f]">
             {lv.era} · {lv.sub}
           </h2>
           <div className="max-w-md space-y-2 text-center text-body leading-relaxed text-[#c8cdd8]">
@@ -490,7 +503,7 @@ function GameStage({
       {/* 死亡 */}
       {phase === 'dead' ? (
         <Overlay>
-          <h2 className="text-display font-bold text-[#e0453a]">泉侠倒下了…</h2>
+          <h2 className="text-[26px] sm:text-[40px] font-bold text-[#e0453a]">泉侠倒下了…</h2>
           <p className="text-body text-[#c8cdd8]">
             止步 第 {levelRef.current + 1} 关 · {lv.era}。武器强化会保留，再来一次！
           </p>
@@ -517,7 +530,7 @@ function GameStage({
       {/* 通关 */}
       {phase === 'victory' ? (
         <Overlay>
-          <h2 className="text-display font-bold text-[#ffd23f]">泉界守护者！</h2>
+          <h2 className="text-[26px] sm:text-[40px] font-bold text-[#ffd23f]">泉界守护者！</h2>
           <p className="max-w-md text-center text-body leading-relaxed text-[#c8cdd8]">
             铁面钱王熔于当百虚值，千年钱脉重归有序。
             <br />
@@ -649,7 +662,7 @@ function Shell({
 }) {
   return (
     <div className={`fixed inset-0 z-[100] flex flex-col bg-[#0e0f14] ${dim ? '' : 'select-none'}`} style={{ touchAction: 'none' }}>
-      <div className="relative mx-auto flex w-full max-w-[calc(100vh*16/9)] flex-1 items-stretch">
+      <div className="relative mx-auto flex w-full max-w-[calc(100vh*16/9)] flex-1 items-center">
         <div className="relative aspect-video w-full">
           {children}
           <div className="absolute left-2 top-2 z-30 flex gap-2">
@@ -670,7 +683,7 @@ function Shell({
 
 function Overlay({ children }: { children: React.ReactNode }) {
   return (
-    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-[rgba(10,10,14,0.85)] p-6 text-center">
+    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 overflow-y-auto bg-[rgba(10,10,14,0.85)] p-4 text-center sm:gap-4 sm:p-6">
       {children}
     </div>
   )
@@ -710,10 +723,11 @@ function Joystick({
   return (
     <div
       ref={ref}
-      className={`game-joystick absolute bottom-6 z-10 h-24 w-24 ${className}`}
+      className={`game-joystick fixed bottom-[max(24px,env(safe-area-inset-bottom))] z-10 h-28 w-28 opacity-45 transition-opacity duration-150 ${className}`}
       onPointerDown={(e) => {
         active.current = true
         e.currentTarget.setPointerCapture(e.pointerId)
+        e.currentTarget.style.opacity = '0.95'
         update(e)
       }}
       onPointerMove={(e) => {
@@ -723,16 +737,18 @@ function Joystick({
         active.current = false
         setKnob({ x: 0, y: 0 })
         onChange(null)
+        if (ref.current) ref.current.style.opacity = ''
       }}
       onPointerCancel={() => {
         active.current = false
         setKnob({ x: 0, y: 0 })
         onChange(null)
+        if (ref.current) ref.current.style.opacity = ''
       }}
     >
       <span className="absolute inset-0 rounded-full border-2 border-[#3a3d46] bg-[rgba(20,21,28,0.5)]" />
       <span
-        className="absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#8a8f98] bg-[#2a2b35]"
+        className="absolute left-1/2 top-1/2 h-11 w-11 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#8a8f98] bg-[#2a2b35]"
         style={{ transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))` }}
       />
       <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-micro text-[#8a8f98]">{label}</span>
@@ -794,13 +810,13 @@ function WeaponRack({
         <button
           key={w.id}
           type="button"
-          className={`game-panel flex flex-col items-center gap-1 p-3 text-center transition-transform hover:-translate-y-0.5 ${
+          className={`game-panel flex flex-col items-center gap-1 p-2 text-center transition-transform hover:-translate-y-0.5 sm:p-3 ${
             keep ? 'ring-1 ring-[#ffd23f]/60' : ''
           }`}
           onClick={() => onPick(w.id)}
         >
-          <WeaponIcon sprite={weaponIconSprite(w)} era={era} />
-          <p className="text-body font-semibold text-[#ffd23f]">
+          <WeaponIcon sprite={weaponIconSprite(w)} era={era} size={40} />
+          <p className="text-sm font-semibold text-[#ffd23f] sm:text-body">
             {w.name}
             {keep ? ' · 保留' : ''}
           </p>
@@ -808,7 +824,7 @@ function WeaponRack({
           <p className="text-micro text-[#8a8f98]">
             {w.pattern === 'orbit' ? `${w.cost} 能量/秒` : `${w.cost} 能量/发`}
           </p>
-          <p className="text-micro leading-relaxed text-[#c8cdd8]">{w.desc}</p>
+          <p className="hidden text-micro leading-relaxed text-[#c8cdd8] sm:block">{w.desc}</p>
         </button>
       ))}
     </div>
@@ -888,7 +904,7 @@ function SettingsPanel({
 
   return (
     <Overlay>
-      <h2 className="text-display font-bold text-[#ffd23f]">设置</h2>
+      <h2 className="text-[26px] sm:text-[40px] font-bold text-[#ffd23f]">设置</h2>
       <div className="w-72 space-y-4 text-left">
         <div className="space-y-1">
           <p className="text-micro text-[#8a8f98]">音效音量</p>
