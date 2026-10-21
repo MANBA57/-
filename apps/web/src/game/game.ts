@@ -808,9 +808,11 @@ export class Game {
           this.orbitTick = 0.15
           for (let k = 0; k < 4; k++) {
             const a = this.orbitAngle + (k / 4) * Math.PI * 2
+            // 内外交替双环：消除贴身盲区
+            const orbR = k % 2 === 0 ? 33 : 21
             this.bullets.push({
-              x: p.x + Math.cos(a) * 33,
-              y: p.y + Math.sin(a) * 33,
+              x: p.x + Math.cos(a) * orbR,
+              y: p.y + Math.sin(a) * orbR,
               vx: 0,
               vy: 0,
               r: 9,
@@ -944,6 +946,26 @@ export class Game {
         break
       }
       case 'slash': {
+        // 贴身反制：近身扇形立即结算+击退（弧光判定体在身前 16px 起，贴脸是盲区）
+        {
+          const sweepDmg = this.weapon.dmg * def.dmgMul
+          const sweepHit = (tx: number, ty: number, r: number): boolean =>
+            dist(p.x, p.y, tx, ty) < 18 + r &&
+            Math.abs(Math.atan2(Math.sin(Math.atan2(ty - p.y, tx - p.x) - a0), Math.cos(Math.atan2(ty - p.y, tx - p.x) - a0))) < 1.35
+          for (const e of this.enemies) {
+            if (e.spawnT > 0) continue
+            if (!sweepHit(e.x, e.y, e.r)) continue
+            e.hp -= sweepDmg
+            e.flash = 0.12
+            this.addFloat(e.x, e.y - e.r - 2, fmtNum(sweepDmg), '#f5f5f7', 7)
+            const dd = dist(p.x, p.y, e.x, e.y) || 1
+            this.moveCircle(e, ((e.x - p.x) / dd) * 14, ((e.y - p.y) / dd) * 14, false)
+            if (e.hp <= 0) this.enemyDie(e)
+          }
+          const bs = this.boss
+          if (bs && !bs.dead && bs.spawnT <= 0 && sweepHit(bs.x, bs.y, bs.r)) this.damageBoss(sweepDmg, false)
+          this.particles.burst(p.x + Math.cos(a0) * 10, p.y + Math.sin(a0) * 10, '#e8e2ff', 5, 60, 0.22)
+        }
         // 三道弧光扇形斩（判定体更大更远，可劈碎敌弹）
         for (const off of [-0.5, 0, 0.5]) {
           const a = a0 + off
@@ -1164,11 +1186,13 @@ export class Game {
       const d = dist(e.x, e.y, p.x, p.y)
       const ux = d > 0 ? (p.x - e.x) / d : 0
       const uy = d > 0 ? (p.y - e.y) / d : 0
+      // 接触钳制：贴到碰撞边缘就不再逼近（防止吸到玩家圆心坐脸）
+      const hold = d > e.r + p.r + 3 ? 1 : 0
 
       switch (e.arch) {
         case 'blob': {
           const wob = Math.sin(this.time * 3 + e.phase) * 0.35
-          this.moveCircle(e, (ux - uy * wob) * e.spd * dt, (uy + ux * wob) * e.spd * dt, false)
+          this.moveCircle(e, (ux * hold - uy * wob) * e.spd * dt, (uy * hold + ux * wob) * e.spd * dt, false)
           e.faceLeft = ux < 0
           break
         }
@@ -1208,14 +1232,14 @@ export class Game {
         }
         case 'fly': {
           const wob = Math.sin(this.time * 6 + e.phase) * 0.8
-          this.moveCircle(e, (ux - uy * wob) * e.spd * dt, (uy + ux * wob) * e.spd * dt, true)
+          this.moveCircle(e, (ux * hold - uy * wob) * e.spd * dt, (uy * hold + ux * wob) * e.spd * dt, true)
           e.faceLeft = ux < 0
           break
         }
         case 'dash': {
           if (e.state === 0) {
-            // 潜行接近
-            this.moveCircle(e, ux * e.spd * dt, uy * e.spd * dt, false)
+            // 潜行接近（贴身即停，转入蓄力）
+            this.moveCircle(e, ux * hold * e.spd * dt, uy * hold * e.spd * dt, false)
             e.t -= dt
             if (e.t <= 0) {
               e.state = 1
@@ -1263,7 +1287,7 @@ export class Game {
           break
         }
         case 'tank': {
-          this.moveCircle(e, ux * e.spd * dt, uy * e.spd * dt, false)
+          this.moveCircle(e, ux * hold * e.spd * dt, uy * hold * e.spd * dt, false)
           e.faceLeft = ux < 0
           if (e.state === 1) {
             e.t -= dt
@@ -1287,8 +1311,8 @@ export class Game {
         }
         case 'bomb': {
           if (e.state === 0) {
-            // 竹钱妖追击
-            this.moveCircle(e, ux * e.spd * dt, uy * e.spd * dt, false)
+            // 竹钱妖追击（贴身即停，留给玩家跑出爆炸圈的余地）
+            this.moveCircle(e, ux * hold * e.spd * dt, uy * hold * e.spd * dt, false)
             e.faceLeft = ux < 0
             if (d < 26) {
               e.state = 1
@@ -1296,8 +1320,7 @@ export class Game {
               this.sfx.play('select')
             }
           } else if (e.state === 1) {
-            // 引信倒计时：减速逼近 + 火星 + 加速闪烁
-            this.moveCircle(e, ux * e.spd * 0.45 * dt, uy * e.spd * 0.45 * dt, false)
+            // 引信倒计时：原地待爆 + 火星 + 加速闪烁
             e.t -= dt
             if (!REDUCED_MOTION && Math.random() < 0.35) {
               this.particles.trail(e.x + (Math.random() - 0.5) * 4, e.y - e.r - 4, '#ffd23f')
@@ -2936,8 +2959,9 @@ export class Game {
     const spr = spriteCanvas('orbitBlade', this.levelIdx)
     for (let k = 0; k < 4; k++) {
       const a = this.orbitAngle + (k / 4) * Math.PI * 2
-      const x = p.x + Math.cos(a) * 33
-      const y = p.y + Math.sin(a) * 33
+      const orbR = k % 2 === 0 ? 33 : 21
+      const x = p.x + Math.cos(a) * orbR
+      const y = p.y + Math.sin(a) * orbR
       ctx.save()
       ctx.translate(Math.round(x), Math.round(y))
       ctx.rotate(this.orbitAngle * 3 + k * 2)

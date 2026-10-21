@@ -72,7 +72,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     id: 'daobi',
     name: '刀币斩月',
     cls: '近战',
-    desc: '挥出齐刀弧光，斩得远、劈得快，还能击碎敌弹。',
+    desc: '挥出齐刀弧光，贴脸反击、斩远劈快、击碎敌弹。',
     pattern: 'slash',
     cost: 6,
     intervalMul: 1.25,
