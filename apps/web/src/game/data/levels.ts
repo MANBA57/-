@@ -337,17 +337,24 @@ export const LEVELS: LevelConfig[] = [
   },
 ]
 
-/** 28 次宝箱答题全对时的武器强化顺序（7 关 × 4 箱）。 */
-export const UPGRADE_CYCLE: ('rate' | 'dmg' | 'proj' | 'pierce')[] = [
-  'rate', 'dmg', 'rate', 'dmg', 'proj', 'rate', 'pierce',
-  'dmg', 'rate', 'proj', 'rate', 'dmg', 'pierce', 'rate',
-  'dmg', 'rate', 'proj', 'dmg', 'rate', 'dmg', 'dmg',
-  'proj', 'rate', 'dmg', 'pierce', 'dmg', 'rate', 'dmg',
+/** 宝箱答对时的强化种类（applyUpgrade 按此分支）。 */
+export type UpgradeKind = 'rate' | 'dmg' | 'proj' | 'pierce' | 'speed' | 'crit' | 'emax' | 'eregen'
+
+/** 28 次宝箱答题全对时的武器强化顺序（7 关 × 4 箱）：前期保射速/伤害爽感，中后期混入新维度。 */
+export const UPGRADE_CYCLE: UpgradeKind[] = [
+  'rate', 'dmg', 'rate', 'dmg', 'proj', 'crit', 'rate',
+  'dmg', 'pierce', 'eregen', 'rate', 'proj', 'emax', 'speed',
+  'dmg', 'rate', 'crit', 'dmg', 'proj', 'pierce', 'rate',
+  'dmg', 'emax', 'speed', 'crit', 'dmg', 'rate', 'eregen',
 ]
 
-export const UPGRADE_LABEL: Record<'rate' | 'dmg' | 'proj' | 'pierce', string> = {
+export const UPGRADE_LABEL: Record<UpgradeKind, string> = {
   rate: '射速提升',
   dmg: '伤害提升',
   proj: '弹数 +1',
   pierce: '穿透 +1',
+  speed: '弹速提升',
+  crit: '暴击率 +8%',
+  emax: '能量上限 +25',
+  eregen: '能量回复 +18%',
 }

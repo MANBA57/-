@@ -4,6 +4,7 @@
  */
 
 import { DEFAULT_KEYS, type KeyBindings } from './engine'
+import { WEAPONS } from './data/weapons'
 
 const BEST_KEY = 'coinmuseum:game-best'
 const COLLECTION_KEY = 'coinmuseum:game-collection'
@@ -15,11 +16,25 @@ const RUN_KEY = 'coinmuseum:game-run'
 
 const isBrowser = typeof window !== 'undefined' && typeof localStorage !== 'undefined'
 
-/** 进行中的单局状态：续玩时恢复武器与血量上限（与死亡重试保留武器的规则一致）。 */
+/** 武器数值块的默认值（续玩档缺字段时兜底）。 */
+const WEAPON_DEFAULTS = {
+  weaponId: 'rapid',
+  dmg: 1,
+  interval: 0.42,
+  pierce: 0,
+  projectiles: 1,
+  upgrades: 0,
+  crit: 0,
+  speedMul: 1,
+  energyMax: 100,
+  regenMul: 1,
+}
+
+/** 进行中的单局状态：续玩时恢复武器（含武器形态）与血量上限（与死亡重试保留武器的规则一致）。 */
 export interface RunState {
   level: number
   maxHp: number
-  weapon: { dmg: number; interval: number; pierce: number; projectiles: number; upgrades: number }
+  weapon: typeof WEAPON_DEFAULTS
 }
 
 export function loadBest(): number {
@@ -151,15 +166,28 @@ export function loadRun(): RunState | null {
   try {
     const raw = localStorage.getItem(RUN_KEY)
     if (!raw) return null
-    const r = JSON.parse(raw) as RunState
-    if (
-      typeof r !== 'object' || r === null ||
-      typeof r.level !== 'number' || typeof r.maxHp !== 'number' ||
-      typeof r.weapon?.dmg !== 'number' || typeof r.weapon?.interval !== 'number' ||
-      typeof r.weapon?.pierce !== 'number' || typeof r.weapon?.projectiles !== 'number' ||
-      typeof r.weapon?.upgrades !== 'number'
-    ) return null
-    return r
+    const r = JSON.parse(raw) as Partial<RunState>
+    if (typeof r !== 'object' || r === null || typeof r.level !== 'number' || typeof r.maxHp !== 'number') return null
+    const w = (r.weapon ?? {}) as Record<string, unknown>
+    const num = (key: string, d: number): number =>
+      typeof w[key] === 'number' && Number.isFinite(w[key]) ? (w[key] as number) : d
+    const weaponId = typeof w.weaponId === 'string' && WEAPONS[w.weaponId] ? w.weaponId : 'rapid'
+    return {
+      level: r.level,
+      maxHp: r.maxHp,
+      weapon: {
+        weaponId,
+        dmg: num('dmg', 1),
+        interval: num('interval', 0.42),
+        pierce: num('pierce', 0),
+        projectiles: num('projectiles', 1),
+        upgrades: num('upgrades', 0),
+        crit: num('crit', 0),
+        speedMul: num('speedMul', 1),
+        energyMax: num('energyMax', 100),
+        regenMul: num('regenMul', 1),
+      },
+    }
   } catch {
     return null
   }

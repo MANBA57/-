@@ -142,6 +142,8 @@ const FIXED: Record<string, string> = {
   D: '#828b9c', // 钢铁暗
   u: '#96632f', // 木
   U: '#6b421d', // 木暗
+  c: '#43d0ff', // 能量青
+  C: '#1f7fa8', // 能量青暗
 }
 
 /* ------------------------------------------------------------ 字符画 */
@@ -477,6 +479,186 @@ const SPADE = [
   '.KKK.',
 ]
 
+/** 大钱重弹（贯矢/重贯/当百炮）：10×10 圆形方孔大钱 */
+const PROJ_BIG = [
+  '..KKKKKK..',
+  '.KllmmmMK.',
+  'KllmmmmmMK',
+  'KlmKKKKmMK',
+  'KlmKeeKmMK',
+  'KlmKeeKmMK',
+  'KlmKKKKmMK',
+  'KmmmmmmMMK',
+  '.KmMMMMMK.',
+  '..KKKKKK..',
+]
+
+/** 咒铢追踪弹：8×8 附红眼的五铢 */
+const PROJ_EYE = [
+  '..KKKK..',
+  '.KllmMK.',
+  'KlmRRmMK',
+  'KlmRWrMK',
+  'KlmmRmMK',
+  'KmmmMMMK',
+  '.KmMMMK.',
+  '..KKKK..',
+]
+
+/** 爆雷 / 火铳弹：9×9 黑铁圆弹 + 引信火花 */
+const PROJ_BOMB = [
+  '....Y....',
+  '...KyK...',
+  '..KKKKK..',
+  '.KDDDDDK.',
+  'KDEDDEDDK',
+  'KDDDEDDEK',
+  '.KDDDDDK.',
+  '..KKKKK..',
+  '...KKK...',
+]
+
+/** 能量珠（7×7 青色，W 高光） */
+const ORB = [
+  '..KKK..',
+  '.KccCK.',
+  'KcWccCK',
+  'KcWcccK',
+  'KccccCK',
+  '.KccCK.',
+  '..KKK..',
+]
+
+/** 弧光斩（8×18 竖月牙，按瞄准角旋转出鞘） */
+const SLASH = [
+  '....KK..',
+  '..KKWWK.',
+  '..KWWlK.',
+  '.KWWWlK.',
+  '.KWWllK.',
+  '.KWWllK.',
+  '.KWWllK.',
+  '.KWWllK.',
+  '.KWWllK.',
+  '.KWWllK.',
+  '.KWWllK.',
+  '.KWWllK.',
+  '.KWWllK.',
+  '.KWWllK.',
+  '.KWWlK..',
+  '..KWWlK.',
+  '..KKWWK.',
+  '....KK..',
+]
+
+/** 环钱刀（10×10，四刃方孔钱） */
+const ORBIT_BLADE = [
+  '....WW....',
+  '....WW....',
+  '..KKKKKK..',
+  '..KllmMK..',
+  'WWKlKeKMWW',
+  'WWKlKeKMWW',
+  '..KmmmMK..',
+  '..KKKKKK..',
+  '....WW....',
+  '....WW....',
+]
+
+/** 重锤震荡图标（12×12 同心环，武器架卡片用） */
+const SLAM_ICON = [
+  '....KKKK....',
+  '..KK....KK..',
+  '.K........K.',
+  '.K..KKKK..K.',
+  'K..K....K..K',
+  'K..K.ee.K..K',
+  'K..K.ee.K..K',
+  'K..K....K..K',
+  '.K..KKKK..K.',
+  '.K........K.',
+  '..KK....KK..',
+  '....KKKK....',
+]
+
+/** BOSS：五铢母范·铸神（22×22 方形陶范 + 铜液怒脸 + 四角钱腔） */
+const BOSS_MOLD = [
+  '......................',
+  '...KKKKKKKKKKKKKKKK...',
+  '...KuuuuuuuuuuuuuuK...',
+  '...KuuuuuuuuuuuuuuK...',
+  '...KuuKKKKKKKKKKuuK...',
+  '...KuuYKKllllYKKuuK...',
+  '...KuKKeKKllKKeKKuK...',
+  '...KuuKKKllllKKKuuK...',
+  '...KuuKKlRRRRMKKuuK...',
+  '...KuuKlleWWeMMKuuK...',
+  '...KuuKllemmeMMKuuK...',
+  '...KuuKllWmmWMMKuuK...',
+  '...KuuKllKRRKMMKuuK...',
+  '...KuuKKlmmmmMKKuuK...',
+  '...KuuYKKMMMMYKKuuK...',
+  '...KuKKeKKMMKKeKKuK...',
+  '...KuuKKKMMMMKKKuuK...',
+  '...KuuKKKKKKKKKKuuK...',
+  '...KuuuYuuYuuYuuuuK...',
+  '...KuuuuuuyuuuuuuuK...',
+  '...KKKKKKKKKKKKKKKK...',
+  '......................',
+]
+
+/** BOSS：飞轮圣手·开元（22×22 巨轮辐 + 方孔怒目） */
+const BOSS_WHEEL = [
+  '......................',
+  '.......KKKKKKKK.......',
+  '.....KKKllKlllKKK.....',
+  '....KKllllYlllllKK....',
+  '...KKlllllKlllllmKK...',
+  '..KKllllllKllllmmmKK..',
+  '..KlllllllKlllmmmmmK..',
+  '.KKlllllllKllmmmmmMKK.',
+  '.KllllllKKKKKmmmmMMMK.',
+  '.KllllllKeeeKmmmMMMMK.',
+  '.KlKYKKKKReRKKKKYKKMK.',
+  '.KllllllKeeeKmMMMMMMK.',
+  '.KllllllKKKKKMMMMMMMK.',
+  '.KlllllmmmKmMMMMMMMMK.',
+  '.KKlllmmmmKMMMMMMMMKK.',
+  '..KllmmmmmKMMMMMMMMK..',
+  '..KKmmmmmMYMMMMMMMKK..',
+  '...KKmmmMMKMMMMMMKK...',
+  '....KKmMMMKMMMMMKK....',
+  '.....KKKMMKMMMKKK.....',
+  '.......KKKKKKKK.......',
+  '......................',
+]
+
+/** BOSS：宝钞幽魂·纸魔（22×22 竖钞 + 幽脸 + 朱印 + 撕裂下摆） */
+const BOSS_PAPER = [
+  '......................',
+  '....KKKKKKKKKKKKKK....',
+  '....KnnnnnnnnnnnnK....',
+  '....KnNNNNNNNNNNnK....',
+  '....KnNnnnYYnnnNnK....',
+  '....KnNnnYYYYnnNnK....',
+  '....KnNnYYynYYnNnK....',
+  '....KnNnYYnyYYnNnK....',
+  '....KnNnnYYYYnnNnK....',
+  '....KnNnnnYYnnnNnK....',
+  '....KnNneWnnWenNnK....',
+  '....KnNnennnnenNnK....',
+  '....KnNnnnnnnnnNnK....',
+  '....KnNnneWWennNnK....',
+  '....KnNnnnnnnnnNnK....',
+  '....KnNnnnnnRRRRnK....',
+  '....KnNnnnnnRrRRnK....',
+  '....KnNNNNNNRRRRnK....',
+  '....KnnnnnnnnnnnnK....',
+  '....KN.NN.NN.NN.NK....',
+  '......................',
+  '......................',
+]
+
 /* ------------------------------------------------------------ 瓦片（16×16） */
 
 /** 砖墙：丁砌错缝，砖顶受光 h、灰缝 d */
@@ -696,6 +878,15 @@ export function spriteCanvas(name: string, eraIdx: number): HTMLCanvasElement {
     case 'boss':
       cv = build(BOSS, { ...pal, m: '#b08544', M: '#7a5a26', l: '#d9b778' })
       break
+    case 'bossMold':
+      cv = build(BOSS_MOLD, pal)
+      break
+    case 'bossWheel':
+      cv = build(BOSS_WHEEL, pal)
+      break
+    case 'bossPaper':
+      cv = build(BOSS_PAPER, pal)
+      break
     case 'chest-c':
       cv = build(CHEST_C, pal)
       break
@@ -731,6 +922,30 @@ export function spriteCanvas(name: string, eraIdx: number): HTMLCanvasElement {
       break
     case 'proj':
       cv = eraIdx === 0 ? build(PROJ_SHELL, pal) : eraIdx === 5 ? build(PROJ_NOTE, pal) : build(PROJ_COIN, pal)
+      break
+    case 'projBig':
+      cv = build(PROJ_BIG, pal)
+      break
+    case 'projEye':
+      cv = build(PROJ_EYE, pal)
+      break
+    case 'projBomb':
+      cv = build(PROJ_BOMB, pal)
+      break
+    case 'projNote':
+      cv = build(PROJ_NOTE, pal)
+      break
+    case 'orb':
+      cv = build(ORB, pal)
+      break
+    case 'slash':
+      cv = build(SLASH, pal)
+      break
+    case 'orbitBlade':
+      cv = build(ORBIT_BLADE, pal)
+      break
+    case 'slamIcon':
+      cv = build(SLAM_ICON, pal)
       break
     default:
       cv = build(PROJ_COIN, pal)

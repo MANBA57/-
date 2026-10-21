@@ -183,6 +183,7 @@ export type SfxName =
   | 'victory'
   | 'select'
   | 'heart'
+  | 'explode'
 
 /**
  * WebAudio 振荡器合成音效，无音频文件。
@@ -313,6 +314,10 @@ export class Sfx {
         break
       case 'heart':
         this.tone(660, 990, 0.12, 'sine', 0.7)
+        break
+      case 'explode':
+        this.tone(140, 40, 0.3, 'sawtooth', 0.8)
+        this.noise(0.22, 0.6)
         break
     }
   }

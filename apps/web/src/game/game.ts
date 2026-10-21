@@ -1,20 +1,29 @@
 /**
  * 玩法核心：元气骑士式房间地牢状态机。
- * 每关 = 中央大厅 + 3 战斗房（各一宝箱）+ 关底（传送门 / BOSS）。
+ * 每关 = 中央大厅 + 4 战斗房（各一宝箱）+ 关底（传送门 / BOSS）。
  * 进战斗房锁门刷怪 → 清完解锁开箱 → 答题（React 弹层接管）→ 答对强化武器。
+ * 武器 13 把（近战/远程/爆炸）过关三选一；攻击消耗能量，杀敌掉能量珠补给。
+ * 第 2/4/6 关关底为中途 BOSS，第 7 关为终极铁面钱王。
  */
 
 import { Input, Sfx, Particles, Rng, clamp, dist, type Vec } from './engine'
 
 export { DEFAULT_KEYS, type KeyBindings } from './engine'
 import { spriteCanvas, spriteWhite, ERA_PALETTES } from './sprites'
-import { TILE, ROOM_TW, ROOM_TH, TEMPLATES, LEVELS, UPGRADE_CYCLE, type Arch } from './data/levels'
+import { TILE, ROOM_TW, ROOM_TH, TEMPLATES, LEVELS, UPGRADE_CYCLE, UPGRADE_LABEL, type Arch } from './data/levels'
 import type { Wave } from './data/levels'
+import { WEAPONS, type WeaponDef } from './data/weapons'
+import { BOSSES, LEVEL_BOSS, type BossId } from './data/bosses'
 
 export const VIEW_W = 480
 export const VIEW_H = 270
 const ROOM_H_PX = ROOM_TH * TILE // 256
 const HUD_Y = ROOM_H_PX // HUD 条起始 y
+
+/** 能量自然回复（点/秒），强化可乘 regenMul */
+const ENERGY_REGEN = 20
+
+const fmtNum = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(1))
 
 /* ------------------------------------------------------------ 类型 */
 
@@ -24,7 +33,7 @@ interface DoorSpot {
   toRoom: string
   toTx: number
   toTy: number
-  /** final = 大厅通往关底的大门（需清完三房） */
+  /** final = 大厅通往关底的大门（需清完四房） */
   kind: 'combat' | 'return' | 'final' | 'finalReturn'
 }
 
@@ -85,15 +94,41 @@ interface Bullet {
   life: number
   spin: number
   hit: Set<number>
+  /** 行为标签（影响更新分支） */
+  kind?: 'boomerang' | 'homing' | 'lob' | 'wheel'
+  /** 年龄（秒） */
+  t: number
+  /** 爆炸半径（有值则消亡时爆炸） */
+  blast?: number
+  /** 专属弹形 sprite 名 */
+  sprite?: string
+  /** 拖尾粒子色 */
+  trailC?: string
+  /** 不渲染的纯伤害体（环绕刀） */
+  hidden?: boolean
+  /** 自旋速度（默认 9） */
+  spinRate?: number
+  /** 抛射高度（lob） */
+  z?: number
+  /** lob 总飞行时长 */
+  flight?: number
+  /** boomerang 是否回程 */
+  returning?: boolean
+  /** 剩余反弹次数（BOSS 飞轮） */
+  bounce?: number
+  /** homing 每秒转向（rad） */
+  turn?: number
 }
 
 interface Pickup {
   x: number
   y: number
   t: number
+  type: 'heart' | 'orb'
 }
 
 interface Boss {
+  id: BossId
   x: number
   y: number
   hp: number
@@ -112,13 +147,37 @@ interface Boss {
   dead: boolean
   deadT: number
   summonT: number
+  /** 激光锁定方向 */
+  aimX: number
+  aimY: number
+  /** 奖励是否已发（中途 BOSS 开门 / 终极通关） */
+  rewarded: boolean
+}
+
+/** 伤害跳字 */
+interface FloatText {
+  x: number
+  y: number
+  text: string
+  t: number
+  color: string
+  size: number
 }
 
 export interface Weapon {
+  weaponId: string
   dmg: number
   interval: number
   projectiles: number
   pierce: number
+  /** 暴击率 0~0.5（暴击 ×2 伤害） */
+  crit: number
+  /** 弹速倍率 */
+  speedMul: number
+  /** 能量上限 */
+  energyMax: number
+  /** 能量回复倍率 */
+  regenMul: number
   upgrades: number
 }
 
@@ -182,15 +241,40 @@ export class Game {
     moving: false,
     faceLeft: false,
     aim: 0,
+    /** 攻击能量（消耗型资源） */
+    energy: 100,
   }
 
-  weapon: Weapon = { dmg: 1, interval: 0.42, projectiles: 1, pierce: 0, upgrades: 0 }
+  weapon: Weapon = {
+    weaponId: 'rapid',
+    dmg: 1,
+    interval: 0.42,
+    projectiles: 1,
+    pierce: 0,
+    crit: 0,
+    speedMul: 1,
+    energyMax: 100,
+    regenMul: 1,
+    upgrades: 0,
+  }
 
   private enemies: Enemy[] = []
   private bullets: Bullet[] = []
   private pickups: Pickup[] = []
+  private floats: FloatText[] = []
   private boss: Boss | null = null
   private nextId = 1
+
+  /** 环绕刀状态 */
+  private orbitOn = false
+  private orbitAngle = 0
+  private orbitTick = 0
+  /** 连珠点射剩余 */
+  private burstLeft = 0
+  private burstT = 0
+  private burstAngle = 0
+  /** 能量不足提示闪烁 */
+  private energyFlash = 0
 
   private raf = 0
   private lastT = 0
@@ -269,7 +353,10 @@ export class Game {
     this.enemies = []
     this.bullets = []
     this.pickups = []
+    this.floats = []
     this.boss = null
+    this.orbitOn = false
+    this.burstLeft = 0
     this.clearedCombat = new Set()
     this.rooms = {}
 
@@ -290,8 +377,9 @@ export class Game {
       T: { tx: 15, ty: 0 },
       R2: { tx: ROOM_TW - 1, ty: 12 },
     }
-    const finalKey = idx === 6 ? 'boss' : 'final'
-    const finalTmpl = idx === 6 ? TEMPLATES.bossT! : TEMPLATES.finalT!
+    const bossId = LEVEL_BOSS[idx]
+    const finalKey = bossId ? 'boss' : 'final'
+    const finalTmpl = bossId ? TEMPLATES.bossT! : TEMPLATES.finalT!
 
     for (let i = 0; i < 4; i++) {
       const side = sides[i]!
@@ -443,6 +531,8 @@ export class Game {
     this.bullets = []
     this.enemies = []
     this.pickups = []
+    this.orbitOn = false
+    this.burstLeft = 0
 
     const isCombat = room.waves.length > 0
     const isBoss = room.bossAnchor !== null
@@ -451,15 +541,20 @@ export class Game {
       room.waveIdx = 0
       this.spawnWave(room)
       this.sfx.play('door')
+      // 进新战斗房补一点能量
+      this.player.energy = Math.min(this.weapon.energyMax, this.player.energy + 30)
       this.banner = { text: '房门已锁——消灭所有敌人！', t: 1.6 }
     } else if (isBoss && !room.cleared) {
       const a = room.bossAnchor
+      const id = LEVEL_BOSS[this.levelIdx] ?? 'qianwang'
+      const def = BOSSES[id]!
       this.boss = {
+        id,
         x: a!.x,
         y: a!.y,
-        hp: 72,
-        maxHp: 72,
-        r: 20,
+        hp: def.hp,
+        maxHp: def.hp,
+        r: def.r,
         phase: 1,
         pattern: -1,
         patternT: 1.4,
@@ -473,9 +568,12 @@ export class Game {
         dead: false,
         deadT: 0,
         summonT: 10,
+        aimX: 0,
+        aimY: 1,
+        rewarded: false,
       }
       this.sfx.play('boss')
-      this.banner = { text: '铁面钱王 · 咸丰当百', t: 2.2 }
+      this.banner = { text: def.banner, t: 2.2 }
     }
   }
 
@@ -511,10 +609,16 @@ export class Game {
     this.time += dt
     this.fade = clamp(this.fade + this.fadeDir * dt * 5.5, 0, 1)
     if (this.shake > 0) this.shake -= dt
+    this.energyFlash = Math.max(0, this.energyFlash - dt)
     if (this.banner) {
       this.banner.t -= dt
       if (this.banner.t <= 0) this.banner = null
     }
+    for (const f of this.floats) {
+      f.t += dt
+      f.y -= 22 * dt
+    }
+    this.floats = this.floats.filter((f) => f.t < 0.75)
 
     // 转场
     if (this.fade >= 1 && this.fadeDir > 0 && this.pendingTransition) {
@@ -535,10 +639,17 @@ export class Game {
 
   /* ------------------------------------------------------------ 玩家 */
 
+  private weaponDef(): WeaponDef {
+    return WEAPONS[this.weapon.weaponId] ?? WEAPONS.rapid!
+  }
+
   private updatePlayer(dt: number): void {
     const p = this.player
+    const def = this.weaponDef()
     p.iframe = Math.max(0, p.iframe - dt)
     p.fireCd = Math.max(0, p.fireCd - dt)
+    // 能量自然回复
+    p.energy = Math.min(this.weapon.energyMax, p.energy + ENERGY_REGEN * this.weapon.regenMul * dt)
 
     const ax = this.input.moveAxis()
     p.moving = ax.x !== 0 || ax.y !== 0
@@ -550,28 +661,61 @@ export class Game {
     p.aim = this.autoAim ? this.autoAimAngle(p.x, p.y) : this.input.aimFrom(p.x, p.y)
     p.faceLeft = Math.cos(p.aim) < 0
 
-    // 射击
-    if (this.input.firing() && p.fireCd <= 0) {
-      p.fireCd = this.weapon.interval
-      const n = this.weapon.projectiles
-      for (let i = 0; i < n; i++) {
-        const off = n === 1 ? 0 : (i - (n - 1) / 2) * 0.16
-        const a = p.aim + off
-        this.bullets.push({
-          x: p.x + Math.cos(a) * 8,
-          y: p.y + Math.sin(a) * 8,
-          vx: Math.cos(a) * 250,
-          vy: Math.sin(a) * 250,
-          r: 3.5,
-          dmg: this.weapon.dmg,
-          pierce: this.weapon.pierce,
-          friendly: true,
-          life: 1.6,
-          spin: this.rng.next() * Math.PI * 2,
-          hit: new Set(),
-        })
+    // 连珠点射排程
+    if (this.burstLeft > 0) {
+      this.burstT -= dt
+      if (this.burstT <= 0) {
+        this.burstT = 0.07
+        this.burstLeft--
+        const a = this.burstAngle + (this.rng.next() - 0.5) * 0.06
+        this.spawnBullet(a, def, {})
+        this.sfx.play('shoot')
       }
-      this.sfx.play('shoot')
+    }
+
+    // 环绕钱刀：按住持续消耗能量
+    if (def.pattern === 'orbit') {
+      if (this.input.firing() && p.energy > 1) {
+        this.orbitOn = true
+        p.energy = Math.max(0, p.energy - def.cost * dt)
+        this.orbitAngle += dt * 5.2
+        this.orbitTick -= dt
+        if (this.orbitTick <= 0) {
+          this.orbitTick = 0.22
+          for (let k = 0; k < 3; k++) {
+            const a = this.orbitAngle + (k / 3) * Math.PI * 2
+            this.bullets.push({
+              x: p.x + Math.cos(a) * 26,
+              y: p.y + Math.sin(a) * 26,
+              vx: 0,
+              vy: 0,
+              r: 8,
+              dmg: this.weapon.dmg * def.dmgMul,
+              pierce: 99,
+              friendly: true,
+              life: 0.23,
+              spin: a,
+              t: 0,
+              hidden: true,
+              hit: new Set(),
+            })
+          }
+        }
+      } else {
+        this.orbitOn = false
+      }
+    } else {
+      this.orbitOn = false
+      // 常规开火
+      if (this.input.firing() && p.fireCd <= 0) {
+        if (p.energy >= def.cost) {
+          p.energy -= def.cost
+          p.fireCd = this.weapon.interval * def.intervalMul
+          this.fireWeapon(def)
+        } else {
+          this.energyFlash = 0.6
+        }
+      }
     }
 
     // 门穿越
@@ -596,6 +740,151 @@ export class Game {
         return
       }
     }
+  }
+
+  /** 按武器 pattern 开火（能量已扣、冷却已设）。 */
+  private fireWeapon(def: WeaponDef): void {
+    const p = this.player
+    const a0 = p.aim
+    switch (def.pattern) {
+      case 'single': {
+        const n = this.weapon.projectiles
+        for (let i = 0; i < n; i++) this.spawnBullet(a0 + (n === 1 ? 0 : (i - (n - 1) / 2) * 0.16), def)
+        this.sfx.play('shoot')
+        break
+      }
+      case 'fan': {
+        const n = 5 + (this.weapon.projectiles - 1) * 2
+        const spread = def.spread ?? 0.34
+        for (let i = 0; i < n; i++) this.spawnBullet(a0 + (i - (n - 1) / 2) * spread, def)
+        this.sfx.play('shoot')
+        break
+      }
+      case 'lance': {
+        const n = this.weapon.projectiles
+        for (let i = 0; i < n; i++) this.spawnBullet(a0 + (n === 1 ? 0 : (i - (n - 1) / 2) * 0.1), def)
+        this.sfx.play('shoot')
+        break
+      }
+      case 'burst': {
+        // 首发立即，余两发由排程补上
+        this.burstLeft = 2
+        this.burstT = 0.07
+        this.burstAngle = a0
+        this.spawnBullet(a0, def, {})
+        this.sfx.play('shoot')
+        break
+      }
+      case 'homing': {
+        const n = this.weapon.projectiles
+        for (let i = 0; i < n; i++) this.spawnBullet(a0 + (n === 1 ? 0 : (i - (n - 1) / 2) * 0.25), def, { kind: 'homing', turn: 4.2 })
+        this.sfx.play('shoot')
+        break
+      }
+      case 'boomerang': {
+        this.spawnBullet(a0, def, { kind: 'boomerang' })
+        this.sfx.play('shoot')
+        break
+      }
+      case 'lob': {
+        // 落点 = 瞄准点（鼠标位置 / 自动瞄准目标 / 摇杆方向 90px），按距离定速度保证落点准确
+        const tgt = this.aimTargetPoint()
+        const d = clamp(dist(p.x, p.y, tgt.x, tgt.y), 40, 220)
+        const flight = 0.55
+        const a = Math.atan2(tgt.y - p.y, tgt.x - p.x)
+        this.spawnBullet(a, def, { kind: 'lob', flight, z: 0 }, d / flight)
+        this.sfx.play('shoot')
+        break
+      }
+      case 'cannon': {
+        this.spawnBullet(a0, def, {})
+        this.sfx.play('shoot')
+        this.particles.burst(p.x + Math.cos(a0) * 10, p.y + Math.sin(a0) * 10, '#ff9650', 4, 50, 0.2)
+        break
+      }
+      case 'slash': {
+        // 三道弧光扇形斩
+        for (const off of [-0.5, 0, 0.5]) {
+          const a = a0 + off
+          this.bullets.push({
+            x: p.x + Math.cos(a) * 20,
+            y: p.y + Math.sin(a) * 20,
+            vx: Math.cos(a) * 60,
+            vy: Math.sin(a) * 60,
+            r: 9,
+            dmg: this.weapon.dmg * def.dmgMul,
+            pierce: 99,
+            friendly: true,
+            life: 0.16,
+            spin: a + Math.PI / 2,
+            t: 0,
+            sprite: 'slash',
+            spinRate: 0,
+            trailC: def.trail,
+            hit: new Set(),
+          })
+        }
+        this.sfx.play('select')
+        this.particles.burst(p.x + Math.cos(a0) * 22, p.y + Math.sin(a0) * 22, '#f5f5f7', 6, 70, 0.25)
+        break
+      }
+      case 'slam': {
+        this.sfx.play('explode')
+        this.shake = REDUCED_MOTION ? 0 : 0.55
+        this.particles.burst(p.x, p.y, '#cdd4e0', 14, 130, 0.45)
+        this.particles.burst(p.x, p.y, '#828b9c', 10, 90, 0.55)
+        const radius = def.blast ?? 40
+        const dmg = this.weapon.dmg * def.dmgMul
+        for (const e of this.enemies) {
+          if (e.spawnT > 0) continue
+          if (dist(p.x, p.y, e.x, e.y) < radius + e.r) {
+            e.hp -= dmg
+            e.flash = 0.15
+            this.addFloat(e.x, e.y - e.r - 2, fmtNum(dmg), '#e8f1f8', 8)
+            // 击退
+            const d = dist(p.x, p.y, e.x, e.y) || 1
+            this.moveCircle(e, ((e.x - p.x) / d) * 16, ((e.y - p.y) / d) * 16, false)
+            if (e.hp <= 0) this.enemyDie(e)
+          }
+        }
+        const boss = this.boss
+        if (boss && !boss.dead && boss.spawnT <= 0 && dist(p.x, p.y, boss.x, boss.y) < radius + boss.r) {
+          this.damageBoss(dmg, false)
+        }
+        break
+      }
+      case 'orbit':
+        break // 环绕刀在 updatePlayer 里按帧处理
+    }
+    // 枪口火光（非近战/环绕）
+    if (def.pattern !== 'slash' && def.pattern !== 'slam' && def.pattern !== 'orbit' && def.pattern !== 'cannon') {
+      this.particles.burst(p.x + Math.cos(a0) * 9, p.y + Math.sin(a0) * 9, def.trail.replace(/^rgba\((\d+),(\d+),(\d+).*$/, 'rgba($1,$2,$3,0.8)'), 2, 26, 0.14)
+    }
+  }
+
+  /** 造一发常规弹（速度/伤害/穿透/弹形取武器数值 × 武器定义）。speedPx 覆盖弹速。 */
+  private spawnBullet(a: number, def: WeaponDef, over: Partial<Bullet> = {}, speedPx?: number): void {
+    const p = this.player
+    const speed = (speedPx ?? (def.speed ?? 250)) * this.weapon.speedMul
+    const b: Bullet = {
+      x: p.x + Math.cos(a) * 8,
+      y: p.y + Math.sin(a) * 8,
+      vx: Math.cos(a) * speed,
+      vy: Math.sin(a) * speed,
+      r: def.bulletR ?? 3.5,
+      dmg: this.weapon.dmg * def.dmgMul,
+      pierce: this.weapon.pierce + (def.pierce ?? 0),
+      friendly: true,
+      life: def.life ?? 1.4,
+      spin: this.rng.next() * Math.PI * 2,
+      t: 0,
+      sprite: def.sprite,
+      trailC: def.trail,
+      hit: new Set(),
+    }
+    if (def.blast) b.blast = def.blast
+    Object.assign(b, over)
+    this.bullets.push(b)
   }
 
   /** 圆形实体贴墙移动（分轴检测）。fly=true 时可越过岩块。 */
@@ -643,42 +932,54 @@ export class Game {
     }
   }
 
+  private solidAtPx(x: number, y: number): boolean {
+    const room = this.current
+    if (!room) return true
+    const tx = Math.floor(x / TILE)
+    const ty = Math.floor(y / TILE)
+    if (tx < 0 || ty < 0 || tx >= ROOM_TW || ty >= ROOM_TH) return true
+    return room.solid[ty * ROOM_TW + tx] !== 0
+  }
+
   /* ------------------------------------------------------------ 敌人 */
 
   private spawnWave(room: Room): void {
     const wave = room.waves[room.waveIdx]
     if (!wave) return
-    const hpMul = 1 + this.levelIdx * 0.28
     for (const entry of wave) {
       for (let i = 0; i < entry.count; i++) {
-        const base = ARCH_BASE[entry.arch]
         const pos = this.findSpawnPos()
-        const elite = entry.elite === true
-        this.enemies.push({
-          id: this.nextId++,
-          arch: entry.arch,
-          x: pos.x,
-          y: pos.y,
-          hp: base.hp * hpMul * (elite ? 2.2 : 1),
-          maxHp: base.hp * hpMul * (elite ? 2.2 : 1),
-          r: base.r * (elite ? 1.25 : 1),
-          spd: base.spd * (elite ? 1.15 : 1),
-          elite,
-          flash: 0,
-          anim: this.rng.next() * 2,
-          spawnT: 0.5 + i * 0.12,
-          state: 0,
-          t: this.rng.range(0.8, 2),
-          fireT: this.rng.range(1, 2),
-          dirX: 0,
-          dirY: 0,
-          phase: this.rng.next() * Math.PI * 2,
-          rollAngle: 0,
-          faceLeft: false,
-        })
+        this.summonEnemy(entry.arch, pos.x, pos.y, entry.elite === true)
       }
     }
     this.banner = { text: `第 ${room.waveIdx + 1} / ${room.waves.length} 波`, t: 1.2 }
+  }
+
+  private summonEnemy(arch: Arch, x: number, y: number, elite = false, spdOverride?: number): void {
+    const base = ARCH_BASE[arch]
+    const hpMul = 1 + this.levelIdx * 0.28
+    this.enemies.push({
+      id: this.nextId++,
+      arch,
+      x,
+      y,
+      hp: base.hp * hpMul * (elite ? 2.2 : 1),
+      maxHp: base.hp * hpMul * (elite ? 2.2 : 1),
+      r: base.r * (elite ? 1.25 : 1),
+      spd: spdOverride ?? base.spd * (elite ? 1.15 : 1),
+      elite,
+      flash: 0,
+      anim: this.rng.next() * 2,
+      spawnT: 0.5,
+      state: 0,
+      t: this.rng.range(0.8, 2),
+      fireT: this.rng.range(1, 2),
+      dirX: 0,
+      dirY: 0,
+      phase: this.rng.next() * Math.PI * 2,
+      rollAngle: 0,
+      faceLeft: false,
+    })
   }
 
   private findSpawnPos(): Vec {
@@ -726,19 +1027,7 @@ export class Game {
             if (e.t <= 0) {
               e.state = 0
               const a = Math.atan2(p.y - e.y, p.x - e.x)
-              this.bullets.push({
-                x: e.x + Math.cos(a) * 8,
-                y: e.y + Math.sin(a) * 8,
-                vx: Math.cos(a) * 125,
-                vy: Math.sin(a) * 125,
-                r: 3.5,
-                dmg: 1,
-                pierce: 0,
-                friendly: false,
-                life: 4,
-                spin: 0,
-                hit: new Set(),
-              })
+              this.bullets.push(this.enemyShot(e.x, e.y, a, 125))
               e.fireT = this.rng.range(1.6, 2.3)
             }
           } else {
@@ -831,19 +1120,7 @@ export class Game {
               // 环形 8 向弹
               for (let k = 0; k < 8; k++) {
                 const a = (k / 8) * Math.PI * 2 + e.phase
-                this.bullets.push({
-                  x: e.x + Math.cos(a) * 10,
-                  y: e.y + Math.sin(a) * 10,
-                  vx: Math.cos(a) * 95,
-                  vy: Math.sin(a) * 95,
-                  r: 3,
-                  dmg: 1,
-                  pierce: 0,
-                  friendly: false,
-                  life: 4,
-                  spin: 0,
-                  hit: new Set(),
-                })
+                this.bullets.push(this.enemyShot(e.x, e.y, a, 95, 3))
               }
               e.fireT = this.rng.range(2.8, 3.6)
             }
@@ -886,6 +1163,25 @@ export class Game {
     }
   }
 
+  private enemyShot(x: number, y: number, a: number, speed: number, r = 3.5, over: Partial<Bullet> = {}): Bullet {
+    const b: Bullet = {
+      x: x + Math.cos(a) * 8,
+      y: y + Math.sin(a) * 8,
+      vx: Math.cos(a) * speed,
+      vy: Math.sin(a) * speed,
+      r,
+      dmg: 1,
+      pierce: 0,
+      friendly: false,
+      life: 4,
+      spin: 0,
+      t: 0,
+      hit: new Set(),
+    }
+    Object.assign(b, over)
+    return b
+  }
+
   /** 自动瞄准：最近的可命中目标（含 BOSS）；无目标时退回手动瞄准。 */
   private autoAimAngle(px: number, py: number): number {
     let best: { x: number; y: number } | null = null
@@ -901,6 +1197,21 @@ export class Game {
       if (d < bd) { bd = d; best = b }
     }
     return best ? Math.atan2(best.y - py, best.x - px) : this.input.aimFrom(px, py)
+  }
+
+  /** 瞄准落点（爆雷等抛射武器用）：自动瞄准→目标实体；摇杆→朝向 90px；鼠标→指针位置。 */
+  private aimTargetPoint(): Vec {
+    const p = this.player
+    if (this.autoAim) {
+      const t = this.nearestTarget(p.x, p.y)
+      if (t) return t
+    }
+    const stick = this.input.stickAim
+    if (stick && (stick.x !== 0 || stick.y !== 0)) {
+      const a = Math.atan2(stick.y, stick.x)
+      return { x: p.x + Math.cos(a) * 90, y: p.y + Math.sin(a) * 90 }
+    }
+    return { x: this.input.pointer.x, y: this.input.pointer.y }
   }
 
   private hurtPlayer(kx: number, ky: number): void {
@@ -919,21 +1230,102 @@ export class Game {
     }
   }
 
+  /** 敌人死亡：爆散 + 掉落（红心 / 能量珠）。 */
+  private enemyDie(e: Enemy): void {
+    const p = this.player
+    this.particles.burst(e.x, e.y, ERA_PALETTES[this.levelIdx]!.tint, 12, 90, 0.5)
+    this.particles.burst(e.x, e.y, '#ffd23f', 6, 70, 0.45)
+    this.sfx.play('enemyDie')
+    const wantHeart = p.hp < p.maxHp
+    if (e.elite) {
+      if (wantHeart) this.pickups.push({ x: e.x - 5, y: e.y, t: 0, type: 'heart' })
+      this.pickups.push({ x: e.x + 5, y: e.y, t: 0, type: 'orb' })
+    } else {
+      const r = this.rng.next()
+      if (wantHeart && r < 0.28) this.pickups.push({ x: e.x, y: e.y, t: 0, type: 'heart' })
+      else if (this.rng.next() < 0.3) this.pickups.push({ x: e.x, y: e.y, t: 0, type: 'orb' })
+    }
+  }
+
+  private addFloat(x: number, y: number, text: string, color: string, size = 7): void {
+    if (REDUCED_MOTION) return
+    this.floats.push({ x, y, text, t: 0, color, size })
+  }
+
+  /** 爆炸：范围伤害（可选击退）+ 双色粒子 + 震屏。 */
+  private explode(x: number, y: number, radius: number, dmg: number, knock = false): void {
+    this.sfx.play('explode')
+    this.shake = REDUCED_MOTION ? 0 : Math.min(1.5, radius / 28)
+    this.particles.burst(x, y, '#ffd23f', 10, radius * 4, 0.4)
+    this.particles.burst(x, y, '#ff7840', 12, radius * 3, 0.55)
+    for (const e of this.enemies) {
+      if (e.spawnT > 0) continue
+      if (dist(x, y, e.x, e.y) < radius + e.r) {
+        e.hp -= dmg
+        e.flash = 0.15
+        this.addFloat(e.x, e.y - e.r - 2, fmtNum(dmg), '#ffb066', 8)
+        if (knock) {
+          const d = dist(x, y, e.x, e.y) || 1
+          this.moveCircle(e, ((e.x - x) / d) * 14, ((e.y - y) / d) * 14, false)
+        }
+        if (e.hp <= 0) this.enemyDie(e)
+      }
+    }
+    const boss = this.boss
+    if (boss && !boss.dead && boss.spawnT <= 0 && dist(x, y, boss.x, boss.y) < radius + boss.r) {
+      this.damageBoss(dmg, false)
+    }
+  }
+
+  private damageBoss(dmg: number, crit: boolean): void {
+    const b = this.boss
+    if (!b || b.dead) return
+    b.hp -= dmg
+    b.flash = 0.1
+    this.addFloat(b.x + (this.rng.next() - 0.5) * 14, b.y - b.r - 4, (crit ? '暴击 ' : '') + fmtNum(dmg), crit ? '#ff5b4d' : '#f5f5f7', crit ? 9 : 7)
+    if (b.hp <= 0) {
+      b.hp = 0
+      b.dead = true
+      this.shake = REDUCED_MOTION ? 0 : 0.9
+      this.sfx.play('boss')
+    }
+  }
+
   /* ------------------------------------------------------------ BOSS */
 
   private updateBoss(dt: number): void {
     const b = this.boss
     if (!b) return
+    const def = BOSSES[b.id]!
     const p = this.player
     b.flash = Math.max(0, b.flash - dt)
 
     if (b.dead) {
       b.deadT += dt
       if (b.deadT > 0.2 && b.deadT - dt <= 0.2) this.particles.burst(b.x, b.y, '#ffd23f', 40, 140, 0.9)
-      if (b.deadT > 1.4 && !this.paused) {
-        this.paused = true
-        this.sfx.play('victory')
-        this.cb.onVictory()
+      if (b.deadT > 1.4 && !b.rewarded) {
+        b.rewarded = true
+        if (b.id === 'qianwang') {
+          this.paused = true
+          this.sfx.play('victory')
+          this.cb.onVictory()
+        } else {
+          // 中途 BOSS：双倍强化 + 补给 + 开传送门
+          const room = this.current!
+          room.portal = { x: room.bossAnchor?.x ?? b.x, y: (room.bossAnchor?.y ?? b.y) + 26 }
+          room.cleared = true
+          this.applyUpgrade()
+          this.applyUpgrade()
+          p.hp = Math.min(p.maxHp, p.hp + 2)
+          p.energy = this.weapon.energyMax
+          this.pickups.push({ x: b.x - 8, y: b.y, t: 0, type: 'heart' })
+          for (let k = 0; k < 5; k++) {
+            const a = (k / 5) * Math.PI * 2
+            this.pickups.push({ x: b.x + Math.cos(a) * 20, y: b.y + Math.sin(a) * 20, t: 0, type: 'orb' })
+          }
+          this.banner = { text: 'BOSS 击破！强化 ×2 · 传送门开启', t: 2.6 }
+          this.sfx.play('victory')
+        }
       }
       return
     }
@@ -947,182 +1339,378 @@ export class Game {
     const ux = d > 0 ? (p.x - b.x) / d : 0
     const uy = d > 0 ? (p.y - b.y) / d : 0
 
-    // 进入二阶段
+    // 阶段切换
     if (b.phase === 1 && b.hp <= b.maxHp / 2) {
       b.phase = 2
       b.flash = 0.4
       this.shake = REDUCED_MOTION ? 0 : 0.5
       this.sfx.play('boss')
-      this.banner = { text: '钱王暴怒——虚值大钱漫天飞舞！', t: 2.2 }
+      this.banner = { text: def.rageBanner, t: 2.2 }
+    }
+    if (b.id === 'qianwang' && b.phase === 2 && b.hp <= b.maxHp / 4) {
+      b.phase = 3
+      b.flash = 0.5
+      this.shake = REDUCED_MOTION ? 0 : 0.7
+      this.sfx.play('boss')
+      this.banner = { text: '当百钱海——虚值滔天！', t: 2.4 }
     }
 
     b.patternT -= dt
-    const speedMul = b.phase === 2 ? 1.35 : 1
+    const speedMul = b.phase === 3 ? 1.5 : b.phase === 2 ? 1.3 : 1
+    const drift = (b.id === 'zhushen' ? 26 : b.id === 'zhimo' ? 28 : 32) * speedMul
 
-    switch (b.pattern) {
-      case -1: // 开场逼近
-      case 0: { // 漂移逼近
-        this.moveCircle(b, ux * 32 * speedMul * dt, uy * 32 * speedMul * dt, false)
-        if (b.patternT <= 0) {
-          b.pattern = this.rng.int(1, b.phase === 2 ? 4 : 3)
-          b.step = 0
-          b.patternT = 0
+    if (b.pattern <= 0) {
+      // 漂移逼近 → 按 BOSS 挑下一个技能
+      this.moveCircle(b, ux * drift * dt, uy * drift * dt, false)
+      if (b.patternT <= 0) {
+        const pools: Record<BossId, number[]> = {
+          zhushen: b.phase === 2 ? [1, 2, 3, 1, 3] : [1, 2, 3],
+          shengshou: b.phase === 2 ? [1, 2, 3, 1] : [1, 2, 3],
+          zhimo: b.phase === 2 ? [1, 2, 3, 2] : [1, 2, 3],
+          qianwang:
+            b.phase === 3 ? [1, 2, 3, 4, 5] : b.phase === 2 ? [1, 2, 3, 4] : [1, 2, 3],
         }
-        break
+        const pool = pools[b.id]
+        b.pattern = pool[this.rng.int(0, pool.length - 1)]!
+        b.step = 0
+        b.fireT = 0
+        b.patternT = 0
+        // 带预警的技能给前摇时间
+        if (b.id === 'zhushen' && b.pattern === 3) b.patternT = 0.75
+        if (b.id === 'shengshou' && b.pattern === 3) b.patternT = 0.4
       }
-      case 1: { // 环形弹幕（3 轮）
-        if (b.patternT <= 0) {
-          const n = 14
-          const off = b.step * 0.22
-          for (let k = 0; k < n; k++) {
-            const a = (k / n) * Math.PI * 2 + off
-            this.bullets.push({
-              x: b.x + Math.cos(a) * b.r,
-              y: b.y + Math.sin(a) * b.r,
-              vx: Math.cos(a) * (78 + b.phase * 14),
-              vy: Math.sin(a) * (78 + b.phase * 14),
-              r: 3,
-              dmg: 1,
-              pierce: 0,
-              friendly: false,
-              life: 4.5,
-              spin: 0,
-              hit: new Set(),
-            })
-          }
-          this.sfx.play('hit')
-          b.step++
-          b.patternT = 0.3
-          if (b.step >= 3) {
-            b.pattern = 0
-            b.patternT = 1.5
-          }
-        }
-        break
-      }
-      case 2: { // 瞄准散射（3 组）
-        if (b.patternT <= 0) {
-          const base = Math.atan2(p.y - b.y, p.x - b.x)
-          for (let k = -2; k <= 2; k++) {
-            const a = base + k * 0.16
-            this.bullets.push({
-              x: b.x + Math.cos(a) * b.r,
-              y: b.y + Math.sin(a) * b.r,
-              vx: Math.cos(a) * 130,
-              vy: Math.sin(a) * 130,
-              r: 3,
-              dmg: 1,
-              pierce: 0,
-              friendly: false,
-              life: 4,
-              spin: 0,
-              hit: new Set(),
-            })
-          }
-          this.sfx.play('hit')
-          b.step++
-          b.patternT = 0.45
-          if (b.step >= 3) {
-            b.pattern = 0
-            b.patternT = 1.6
-          }
-        }
-        break
-      }
-      case 3: { // 冲锋 ×2
-        if (b.step % 2 === 0 && b.patternT <= 0) {
-          // 瞄准
-          b.dirX = ux
-          b.dirY = uy
-          b.step++
-          b.patternT = 0.55
-        } else if (b.step % 2 === 1) {
-          const before = { x: b.x, y: b.y }
-          this.moveCircle(b, b.dirX * 300 * dt, b.dirY * 300 * dt, false)
-          b.patternT -= dt * 3
-          if (
-            b.patternT <= 0 ||
-            (Math.abs(b.x - before.x) < 0.05 && Math.abs(b.dirX) > 0.1) ||
-            (Math.abs(b.y - before.y) < 0.05 && Math.abs(b.dirY) > 0.1)
-          ) {
+      return
+    }
+
+    switch (b.id) {
+      case 'zhushen': {
+        if (b.pattern === 1) {
+          // 铸模弹幕：环形 3 轮（二阶段 16 向）
+          if (b.patternT <= 0) {
+            const n = b.phase === 2 ? 16 : 12
+            const off = b.step * 0.22
+            for (let k = 0; k < n; k++) {
+              const a = (k / n) * Math.PI * 2 + off
+              this.bullets.push(this.enemyShot(b.x, b.y, a, 78 + b.phase * 12, 3, { life: 4.5 }))
+            }
+            this.sfx.play('hit')
             b.step++
-            if (b.step >= 4) {
+            b.patternT = 0.34
+            if (b.step >= 3) {
               b.pattern = 0
-              b.patternT = 1.3
-            } else {
-              b.patternT = 0.4
+              b.patternT = 1.5
+            }
+          }
+        } else if (b.pattern === 2) {
+          // 开范召唤贝仔
+          if (b.step === 0) {
+            for (let k = 0; k < 3; k++) {
+              const a = (k / 3) * Math.PI * 2
+              const px = clamp(b.x + Math.cos(a) * 34, 24, VIEW_W - 24)
+              const py = clamp(b.y + Math.sin(a) * 34, 24, ROOM_H_PX - 24)
+              this.summonEnemy('blob', px, py)
+            }
+            this.banner = { text: '铸神开范——贝仔涌出！', t: 1.4 }
+            b.step = 1
+            b.patternT = 1.2
+          } else if (b.patternT <= 0) {
+            b.pattern = 0
+            b.patternT = 1.4
+          }
+        } else if (b.pattern === 3) {
+          // 铜液浇铸：预警线 → 直线激光
+          if (b.step === 0) {
+            if (b.fireT === 0) {
+              // 进场即锁定方向，预警 0.75s 后喷射
+              b.aimX = ux
+              b.aimY = uy
+              b.fireT = 1
+            }
+            if (b.patternT <= 0) {
+              b.step = 1
+              b.patternT = 0.65
+              this.sfx.play('boss')
+              this.shake = REDUCED_MOTION ? 0 : 0.3
+            }
+          }
+          if (b.step === 1) {
+            // 喷射中的伤害判定
+            if (p.iframe <= 0 && this.distToRay(p.x, p.y, b.x, b.y, b.aimX, b.aimY, 340) < 8) {
+              this.hurtPlayer(b.aimX, b.aimY)
+            }
+            if (!REDUCED_MOTION && Math.random() < 0.6) {
+              const len = this.rng.range(20, 330)
+              this.particles.burst(b.x + b.aimX * len, b.y + b.aimY * len, '#ffd23f', 1, 30, 0.3)
+            }
+            if (b.patternT <= 0) {
+              b.fireT = 0
+              b.pattern = 0
+              b.patternT = 1.4
             }
           }
         }
         break
       }
-      case 4: { // 二阶段螺旋流
-        if (b.patternT <= 0) {
-          b.fireT -= dt
-          if (b.fireT <= 0) {
-            b.fireT = 0.07
-            b.angle += 0.42
-            for (const s of [0, Math.PI]) {
-              const a = b.angle + s
+      case 'shengshou': {
+        if (b.pattern === 1) {
+          // 旋风飞轮：反弹钱轮（二阶段 4 枚）
+          if (b.patternT <= 0 && b.step === 0) {
+            const n = b.phase === 2 ? 4 : 3
+            for (let k = 0; k < n; k++) {
+              const a = b.angle + (k / n) * Math.PI * 2
+              this.bullets.push(
+                this.enemyShot(b.x, b.y, a, 120 + this.rng.range(0, 40), 5, {
+                  life: 5,
+                  kind: 'wheel',
+                  bounce: 8,
+                  sprite: 'roll',
+                }),
+              )
+            }
+            b.angle += 0.7
+            this.sfx.play('hit')
+            b.step = 1
+            b.patternT = 1.9
+          } else if (b.patternT <= 0) {
+            b.pattern = 0
+            b.patternT = 1.2
+          }
+        } else if (b.pattern === 2) {
+          // 新月斩波：3 组瞄准扇形
+          if (b.patternT <= 0) {
+            const base = Math.atan2(p.y - b.y, p.x - b.x)
+            for (let k = -2; k <= 2; k++) {
+              this.bullets.push(this.enemyShot(b.x, b.y, base + k * 0.2, 95, 3.5, { life: 4 }))
+            }
+            this.sfx.play('hit')
+            b.step++
+            b.patternT = 0.45
+            if (b.step >= 3) {
+              b.pattern = 0
+              b.patternT = 1.6
+            }
+          }
+        } else if (b.pattern === 3) {
+          // 瞬移 + 环形弹
+          if (b.step === 0) {
+            if (b.fireT === 0) {
+              b.fireT = 1
+              this.particles.burst(b.x, b.y, '#f5f5f7', 12, 70, 0.4)
+              this.sfx.play('select')
+            }
+            if (b.patternT <= 0) {
+              const pos = this.findBlinkPos()
+              b.x = pos.x
+              b.y = pos.y
+              this.particles.burst(b.x, b.y, '#ffd23f', 14, 90, 0.4)
+              for (let k = 0; k < 10; k++) {
+                const a = (k / 10) * Math.PI * 2
+                this.bullets.push(this.enemyShot(b.x, b.y, a, 100, 3, { life: 4 }))
+              }
+              this.sfx.play('hit')
+              b.fireT = 0
+              b.pattern = 0
+              b.patternT = 1.2
+            }
+          }
+        }
+        break
+      }
+      case 'zhimo': {
+        if (b.pattern === 1) {
+          // 纸刃螺旋（二阶段 4 臂）
+          if (b.patternT <= 0) {
+            b.fireT -= dt
+            if (b.fireT <= 0) {
+              b.fireT = 0.08
+              b.angle += 0.42
+              const arms = b.phase === 2 ? [0, Math.PI / 2, Math.PI, (Math.PI * 3) / 2] : [0, Math.PI]
+              for (const s of arms) {
+                const a = b.angle + s
+                this.bullets.push(this.enemyShot(b.x, b.y, a, 100, 3, { life: 4, sprite: 'projNote' }))
+              }
+              b.step++
+            }
+            if (b.step > 32) {
+              b.pattern = 0
+              b.patternT = 1.4
+            }
+          }
+        } else if (b.pattern === 2) {
+          // 宝钞雨：预警 → 顶部落纸
+          if (b.step === 0) {
+            this.banner = { text: '纸魔召来宝钞雨！', t: 1.2 }
+            b.step = 1
+            b.patternT = 0.8
+            b.fireT = 0
+          } else if (b.patternT <= 0) {
+            b.fireT -= dt
+            if (b.fireT <= 0) {
+              b.fireT = b.phase === 2 ? 0.11 : 0.15
+              const x = clamp(p.x + this.rng.range(-75, 75), 26, VIEW_W - 26)
               this.bullets.push({
-                x: b.x + Math.cos(a) * b.r,
-                y: b.y + Math.sin(a) * b.r,
-                vx: Math.cos(a) * 105,
-                vy: Math.sin(a) * 105,
+                x,
+                y: 20,
+                vx: this.rng.range(-8, 8),
+                vy: 68 + (b.phase === 2 ? 22 : 0),
                 r: 3,
                 dmg: 1,
                 pierce: 0,
                 friendly: false,
-                life: 4,
+                life: 5,
                 spin: 0,
+                t: 0,
+                sprite: 'projNote',
                 hit: new Set(),
               })
+              b.step++
             }
-            b.step++
+            if (b.step > 22) {
+              b.pattern = 0
+              b.patternT = 1.5
+            }
           }
-          if (b.step > 34) {
+        } else if (b.pattern === 3) {
+          // 撕钞分身：两只纸灵（精英飞虫）
+          if (b.step === 0) {
+            for (const s of [-1, 1]) {
+              this.summonEnemy('fly', clamp(b.x + s * 30, 24, VIEW_W - 24), clamp(b.y - 20, 24, ROOM_H_PX - 24), true)
+            }
+            this.banner = { text: '纸魔撕下两角——纸灵扑来！', t: 1.4 }
+            b.step = 1
+            b.patternT = 1.1
+          } else if (b.patternT <= 0) {
             b.pattern = 0
-            b.patternT = 1.4
+            b.patternT = 1.3
           }
-        } else {
-          b.patternT -= dt
+        }
+        break
+      }
+      case 'qianwang': {
+        switch (b.pattern) {
+          case 1: { // 环形弹幕（3 轮）
+            if (b.patternT <= 0) {
+              const n = b.phase === 3 ? 18 : 14
+              const off = b.step * 0.22
+              for (let k = 0; k < n; k++) {
+                const a = (k / n) * Math.PI * 2 + off
+                this.bullets.push(
+                  this.enemyShot(b.x, b.y, a, 78 + b.phase * 14, b.phase === 3 ? 4.5 : 3, { life: 4.5 }),
+                )
+              }
+              this.sfx.play('hit')
+              b.step++
+              b.patternT = 0.3
+              if (b.step >= 3) {
+                b.pattern = 0
+                b.patternT = 1.5
+              }
+            }
+            break
+          }
+          case 2: { // 瞄准散射（3 组）
+            if (b.patternT <= 0) {
+              const base = Math.atan2(p.y - b.y, p.x - b.x)
+              for (let k = -2; k <= 2; k++) {
+                this.bullets.push(this.enemyShot(b.x, b.y, base + k * 0.16, 130, 3, { life: 4 }))
+              }
+              this.sfx.play('hit')
+              b.step++
+              b.patternT = 0.45
+              if (b.step >= 3) {
+                b.pattern = 0
+                b.patternT = 1.6
+              }
+            }
+            break
+          }
+          case 3: { // 冲锋 ×2
+            if (b.step % 2 === 0 && b.patternT <= 0) {
+              b.dirX = ux
+              b.dirY = uy
+              b.step++
+              b.patternT = 0.55
+            } else if (b.step % 2 === 1) {
+              const before = { x: b.x, y: b.y }
+              this.moveCircle(b, b.dirX * 300 * dt, b.dirY * 300 * dt, false)
+              b.patternT -= dt * 3
+              if (
+                b.patternT <= 0 ||
+                (Math.abs(b.x - before.x) < 0.05 && Math.abs(b.dirX) > 0.1) ||
+                (Math.abs(b.y - before.y) < 0.05 && Math.abs(b.dirY) > 0.1)
+              ) {
+                b.step++
+                if (b.step >= 4) {
+                  b.pattern = 0
+                  b.patternT = 1.3
+                } else {
+                  b.patternT = 0.4
+                }
+              }
+            }
+            break
+          }
+          case 4: { // 螺旋流
+            if (b.patternT <= 0) {
+              b.fireT -= dt
+              if (b.fireT <= 0) {
+                b.fireT = 0.07
+                b.angle += 0.42
+                for (const s of b.phase === 3 ? [0, Math.PI / 2, Math.PI, (Math.PI * 3) / 2] : [0, Math.PI]) {
+                  const a = b.angle + s
+                  this.bullets.push(this.enemyShot(b.x, b.y, a, 105, 3, { life: 4 }))
+                }
+                b.step++
+              }
+              if (b.step > 34) {
+                b.pattern = 0
+                b.patternT = 1.4
+              }
+            } else {
+              b.patternT -= dt
+            }
+            break
+          }
+          case 5: { // 三阶段·当百钱海：大钱环 + 召唤铁卫
+            if (b.patternT <= 0) {
+              const n = 18
+              const off = b.step * 0.19
+              for (let k = 0; k < n; k++) {
+                const a = (k / n) * Math.PI * 2 + off
+                this.bullets.push(this.enemyShot(b.x, b.y, a, 66, 4.5, { life: 4.5, sprite: 'projBig' }))
+              }
+              this.shake = REDUCED_MOTION ? 0 : 0.3
+              this.sfx.play('hit')
+              b.step++
+              b.patternT = 0.42
+              if (b.step === 1 && this.enemies.length < 4) {
+                for (const s of [-1, 1]) {
+                  this.summonEnemy('tank', clamp(b.x + s * 40, 24, VIEW_W - 24), b.y + 24)
+                }
+                this.banner = { text: '钱王召来铁卫！', t: 1.2 }
+              }
+              if (b.step >= 3) {
+                b.pattern = 0
+                b.patternT = 1.2
+              }
+            }
+            break
+          }
         }
         break
       }
     }
 
     // 二阶段召唤
-    if (b.phase === 2) {
+    if (b.phase >= 2) {
       b.summonT -= dt
-      if (b.summonT <= 0 && this.enemies.length < 3) {
+      if (b.summonT <= 0 && this.enemies.length < 4) {
         b.summonT = 11
-        const hpMul = 1 + this.levelIdx * 0.28
         for (let k = 0; k < 3; k++) {
           const pos = this.findSpawnPos()
-          this.enemies.push({
-            id: this.nextId++,
-            arch: 'blob',
-            x: pos.x,
-            y: pos.y,
-            hp: 3 * hpMul,
-            maxHp: 3 * hpMul,
-            r: 6,
-            spd: 62,
-            elite: false,
-            flash: 0,
-            anim: 0,
-            spawnT: 0.4,
-            state: 0,
-            t: 1,
-            fireT: 2,
-            dirX: 0,
-            dirY: 0,
-            phase: this.rng.next() * Math.PI * 2,
-            rollAngle: 0,
-            faceLeft: false,
-          })
+          this.summonEnemy(def.summonArch, pos.x, pos.y)
         }
-        this.banner = { text: '钱王召来小钱兵！', t: 1.2 }
+        this.banner = { text: 'BOSS 召来援军！', t: 1.2 }
       }
     }
 
@@ -1132,41 +1720,119 @@ export class Game {
     }
   }
 
+  /** 点到射线（起点 o、单位方向 d、长 len）的最短距离。 */
+  private distToRay(px: number, py: number, ox: number, oy: number, dx: number, dy: number, len: number): number {
+    const t = clamp((px - ox) * dx + (py - oy) * dy, 0, len)
+    return dist(px, py, ox + dx * t, oy + dy * t)
+  }
+
+  private findBlinkPos(): Vec {
+    const p = this.player
+    for (let i = 0; i < 16; i++) {
+      const a = this.rng.next() * Math.PI * 2
+      const r = 70 + this.rng.next() * 40
+      const x = clamp(p.x + Math.cos(a) * r, 30, VIEW_W - 30)
+      const y = clamp(p.y + Math.sin(a) * r, 30, ROOM_H_PX - 30)
+      if (!this.solidAtPx(x, y)) return { x, y }
+    }
+    return { x: clamp(p.x, 30, VIEW_W - 30), y: clamp(p.y - 70, 30, ROOM_H_PX - 30) }
+  }
+
   /* ------------------------------------------------------------ 弹丸与掉落 */
 
   private updateBullets(dt: number): void {
     const room = this.current!
     const p = this.player
     for (const b of this.bullets) {
+      b.t += dt
+      b.life -= dt
+      b.spin += dt * (b.spinRate ?? 9)
+
+      // 行为更新
+      if (b.kind === 'homing' && b.friendly) {
+        const tgt = this.nearestTarget(b.x, b.y)
+        if (tgt) {
+          const speed = Math.hypot(b.vx, b.vy)
+          const want = Math.atan2(tgt.y - b.y, tgt.x - b.x)
+          const cur = Math.atan2(b.vy, b.vx)
+          let diff = want - cur
+          while (diff > Math.PI) diff -= Math.PI * 2
+          while (diff < -Math.PI) diff += Math.PI * 2
+          const turn = Math.max(-b.turn! * dt, Math.min(b.turn! * dt, diff))
+          const a = cur + turn
+          b.vx = Math.cos(a) * speed
+          b.vy = Math.sin(a) * speed
+        }
+      }
+      if (b.kind === 'boomerang') {
+        const speed = Math.hypot(b.vx, b.vy)
+        if (!b.returning && b.t > 0.42) {
+          b.returning = true
+          b.hit.clear() // 回程可以再打一遍
+        }
+        if (b.returning) {
+          const a = Math.atan2(p.y - b.y, p.x - b.x)
+          b.vx = Math.cos(a) * speed
+          b.vy = Math.sin(a) * speed
+          if (dist(b.x, b.y, p.x, p.y) < 10) b.life = 0
+        }
+      }
+      if (b.flight !== undefined) {
+        // 抛射高度弧线
+        b.z = Math.sin(Math.PI * Math.min(1, b.t / b.flight)) * 24
+      }
+
       b.x += b.vx * dt
       b.y += b.vy * dt
-      b.life -= dt
-      b.spin += dt * 9
 
       // 撞墙
       const tx = Math.floor(b.x / TILE)
       const ty = Math.floor(b.y / TILE)
-      if (tx < 0 || ty < 0 || tx >= ROOM_TW || ty >= ROOM_TH || room.solid[ty * ROOM_TW + tx] !== 0) {
-        b.life = 0
-        if (b.friendly) this.particles.burst(b.x, b.y, '#d9b44a', 3, 40, 0.25)
-        continue
+      const offGrid = tx < 0 || ty < 0 || tx >= ROOM_TW || ty >= ROOM_TH
+      const hitWall = !offGrid && room.solid[ty * ROOM_TW + tx] !== 0
+      if ((offGrid || hitWall) && (b.z === undefined || b.z < 4)) {
+        if (b.bounce && b.bounce > 0 && !offGrid) {
+          b.bounce -= 1
+          const sx = Math.sign(b.vx)
+          const sy = Math.sign(b.vy)
+          const sideX = this.solidAtPx(b.x + sx * (b.r + 2), b.y)
+          const sideY = this.solidAtPx(b.x, b.y + sy * (b.r + 2))
+          if (sideX || !sideY) b.vx = -b.vx
+          if (sideY || (!sideX && !sideY)) b.vy = -b.vy
+          b.x += b.vx * dt * 2
+          b.y += b.vy * dt * 2
+          this.particles.burst(b.x, b.y, '#cdd4e0', 3, 40, 0.2)
+        } else {
+          b.life = 0
+          if (b.friendly && !b.blast) this.particles.burst(b.x, b.y, '#d9b44a', 3, 40, 0.25)
+          continue
+        }
       }
 
       if (b.friendly) {
+        const lowFlight = b.z === undefined || b.z < 6
         for (const e of this.enemies) {
-          if (e.spawnT > 0 || b.hit.has(e.id)) continue
-          if (dist(b.x, b.y, e.x, e.y) < b.r + e.r) {
-            e.hp -= b.dmg
+          if (e.spawnT > 0 || b.hit.has(e.id) || b.life <= 0) continue
+          if (lowFlight && dist(b.x, b.y, e.x, e.y) < b.r + e.r) {
+            if (b.blast) {
+              // 爆炸类：命中即灭，伤害统一交给爆炸
+              b.life = 0
+              break
+            }
+            const crit = this.rng.next() < this.weapon.crit
+            const dmg = b.dmg * (crit ? 2 : 1)
+            e.hp -= dmg
             e.flash = 0.12
             b.hit.add(e.id)
             this.sfx.play('hit')
-            this.particles.burst(b.x, b.y, ERA_PALETTES[this.levelIdx]!.tint, 4, 60, 0.3)
-            if (e.hp <= 0) {
-              this.particles.burst(e.x, e.y, ERA_PALETTES[this.levelIdx]!.tint, 12, 90, 0.5)
-              this.sfx.play('enemyDie')
-              // 回血来源之一：敌人掉红心（精英必掉）
-              if ((e.elite || this.rng.next() < 0.28) && p.hp < p.maxHp) this.pickups.push({ x: e.x, y: e.y, t: 0 })
+            this.addFloat(e.x, e.y - e.r - 2, (crit ? '暴击 ' : '') + fmtNum(dmg), crit ? '#ff5b4d' : '#f5f5f7', crit ? 9 : 7)
+            if (crit) {
+              this.particles.burst(b.x, b.y, '#ffffff', 8, 90, 0.35)
+              this.shake = Math.max(this.shake, REDUCED_MOTION ? 0 : 0.25)
+            } else {
+              this.particles.burst(b.x, b.y, b.trailC ?? ERA_PALETTES[this.levelIdx]!.tint, 4, 60, 0.3)
             }
+            if (e.hp <= 0) this.enemyDie(e)
             if (b.pierce > 0) b.pierce -= 1
             else b.life = 0
             break
@@ -1174,18 +1840,14 @@ export class Game {
         }
         // 打 BOSS
         const boss = this.boss
-        if (boss && !boss.dead && boss.spawnT <= 0 && b.life > 0) {
+        if (boss && !boss.dead && boss.spawnT <= 0 && b.life > 0 && lowFlight) {
           if (dist(b.x, b.y, boss.x, boss.y) < b.r + boss.r) {
-            boss.hp -= b.dmg
-            boss.flash = 0.1
+            const crit = this.rng.next() < this.weapon.crit
+            const dmg = b.dmg * (crit ? 2 : 1)
             this.sfx.play('hit')
-            this.particles.burst(b.x, b.y, '#ffd23f', 4, 60, 0.3)
-            if (boss.hp <= 0) {
-              boss.dead = true
-              boss.hp = 0
-              this.shake = REDUCED_MOTION ? 0 : 0.6
-            }
-            if (b.pierce > 0) b.pierce -= 1
+            if (crit) this.particles.burst(b.x, b.y, '#ffffff', 8, 90, 0.35)
+            if (!b.blast) this.damageBoss(dmg, crit)
+            if (b.pierce > 0 && !b.blast) b.pierce -= 1
             else b.life = 0
           }
         }
@@ -1194,17 +1856,52 @@ export class Game {
         this.hurtPlayer(b.vx / 130, b.vy / 130)
       }
     }
+    // 玩家爆炸弹消亡时统一爆一次（命中 / 撞墙 / 落地 / 到时）
+    for (const b of this.bullets) {
+      if (b.life <= 0 && b.friendly && b.blast) this.explode(b.x, b.y, b.blast, b.dmg)
+    }
     this.bullets = this.bullets.filter((b) => b.life > 0)
+  }
+
+  private nearestTarget(x: number, y: number): Vec | null {
+    let best: Vec | null = null
+    let bd = Infinity
+    for (const e of this.enemies) {
+      if (e.spawnT > 0) continue
+      const d = dist(x, y, e.x, e.y)
+      if (d < bd) { bd = d; best = e }
+    }
+    const b = this.boss
+    if (b && !b.dead && b.spawnT <= 0) {
+      const d = dist(x, y, b.x, b.y)
+      if (d < bd) { bd = d; best = b }
+    }
+    return best
   }
 
   private updatePickups(dt: number): void {
     const p = this.player
     for (const it of this.pickups) it.t += dt
     this.pickups = this.pickups.filter((it) => {
-      if (dist(it.x, it.y, p.x, p.y) < 12) {
-        p.hp = Math.min(p.maxHp, p.hp + 1)
-        this.sfx.play('heart')
-        this.particles.burst(it.x, it.y, '#e0453a', 8, 60, 0.4)
+      const d = dist(it.x, it.y, p.x, p.y)
+      // 能量珠：靠近吸附
+      if (it.type === 'orb' && d < 52 && d > 0.5) {
+        const s = 110 * dt * (1 + (52 - d) / 52)
+        it.x += ((p.x - it.x) / d) * s
+        it.y += ((p.y - it.y) / d) * s
+      }
+      if (d < 11) {
+        if (it.type === 'heart') {
+          if (p.hp >= p.maxHp) return it.t < 12 // 满血不吃，留在地上
+          p.hp = Math.min(p.maxHp, p.hp + 1)
+          this.sfx.play('heart')
+          this.particles.burst(it.x, it.y, '#e0453a', 8, 60, 0.4)
+        } else {
+          p.energy = Math.min(this.weapon.energyMax, p.energy + 16)
+          this.sfx.play('coin')
+          this.particles.burst(it.x, it.y, '#43d0ff', 8, 70, 0.4)
+          this.addFloat(p.x, p.y - 12, '+16', '#43d0ff', 7)
+        }
         return false
       }
       return it.t < 12
@@ -1223,11 +1920,12 @@ export class Game {
     this.cb.onChest()
   }
 
-  /** React 答题弹层关闭时回调：correct = 答对则强化武器并回血 1 点。 */
+  /** React 答题弹层关闭时回调：correct = 答对则强化武器并回血 1 点、回满能量。 */
   answerChest(correct: boolean): void {
     if (correct) {
       this.applyUpgrade()
       if (this.player.hp < this.player.maxHp) this.player.hp += 1
+      this.player.energy = this.weapon.energyMax
       this.sfx.play('heart')
     }
     this.setPrompt(null)
@@ -1248,12 +1946,26 @@ export class Game {
         this.weapon.projectiles = Math.min(3, this.weapon.projectiles + 1)
         break
       case 'pierce':
-        this.weapon.pierce = Math.min(2, this.weapon.pierce + 1)
+        this.weapon.pierce = Math.min(4, this.weapon.pierce + 1)
+        break
+      case 'speed':
+        this.weapon.speedMul = Math.min(1.8, this.weapon.speedMul * 1.15)
+        break
+      case 'crit':
+        this.weapon.crit = Math.min(0.5, this.weapon.crit + 0.08)
+        break
+      case 'emax':
+        this.weapon.energyMax += 25
+        this.player.energy = Math.min(this.weapon.energyMax, this.player.energy + 25)
+        break
+      case 'eregen':
+        this.weapon.regenMul = Math.min(2.2, this.weapon.regenMul * 1.18)
         break
     }
     this.weapon.upgrades++
     this.sfx.play('upgrade')
-    this.banner = { text: '武器强化！', t: 1.2 }
+    this.banner = { text: `武器强化！${UPGRADE_LABEL[kind]}`, t: 1.4 }
+    this.ringBurst(this.player.x, this.player.y, '#ffd23f', 14, 20)
   }
 
   /** 触摸端「开箱」按钮调用。 */
@@ -1261,23 +1973,56 @@ export class Game {
     this.tryInteract()
   }
 
+  /** 武器架换武器：强化数值保留，只换形态（冷却清零，立即可射）。 */
+  switchWeapon(id: string): void {
+    const def = WEAPONS[id]
+    if (!def || id === this.weapon.weaponId) return
+    this.weapon.weaponId = id
+    this.player.energy = this.weapon.energyMax
+    this.player.fireCd = 0
+    this.burstLeft = 0
+    this.orbitOn = false
+    this.sfx.play('upgrade')
+    this.ringBurst(this.player.x, this.player.y, def.trail, 16, 26)
+  }
+
   /** 过关后进入下一关（保留武器，上限+1 并回满）。 */
   nextLevel(): void {
     this.player.maxHp = Math.min(8, this.player.maxHp + 1)
     this.player.hp = this.player.maxHp
+    this.player.energy = this.weapon.energyMax
     this.player.iframe = 1
     this.loadLevel(Math.min(6, this.levelIdx + 1))
     this.paused = false
     this.lastT = performance.now()
   }
 
-  /** 死亡重试本关：保留武器，血量回满，房间重置。 */
+  /** 死亡重试本关：保留武器，血量能量回满，房间重置。 */
   retryLevel(): void {
     this.player.hp = this.player.maxHp
+    this.player.energy = this.weapon.energyMax
     this.player.iframe = 1
     this.loadLevel(this.levelIdx)
     this.paused = false
     this.lastT = performance.now()
+  }
+
+  /** 均匀环形粒子（强化/换武器的金环）。 */
+  private ringBurst(x: number, y: number, color: string, n: number, speed: number): void {
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2
+      this.particles.list.push({
+        x,
+        y,
+        vx: Math.cos(a) * speed,
+        vy: Math.sin(a) * speed,
+        life: 0.5,
+        max: 0.5,
+        color,
+        size: 2,
+        gravity: 0,
+      })
+    }
   }
 
   private updateContextPrompt(): void {
@@ -1344,8 +2089,10 @@ export class Game {
     for (const e of this.enemies) this.drawEnemy(e)
     if (this.boss) this.drawBoss(this.boss)
     this.drawPlayer()
+    this.drawOrbit()
     this.drawBullets()
     this.particles.draw(ctx)
+    this.drawFloats()
     ctx.restore()
 
     this.drawHud()
@@ -1440,10 +2187,15 @@ export class Game {
 
   private drawPickups(): void {
     const ctx = this.ctx
-    const spr = spriteCanvas('heart', this.levelIdx)
     for (const it of this.pickups) {
       const bob = Math.sin(it.t * 5) * 1.5
-      ctx.drawImage(spr, Math.round(it.x - 4), Math.round(it.y - 4 + bob))
+      const spr = spriteCanvas(it.type === 'orb' ? 'orb' : 'heart', this.levelIdx)
+      // 能量珠微光
+      if (it.type === 'orb') {
+        ctx.fillStyle = `rgba(67, 208, 255, ${0.18 + Math.sin(it.t * 6) * 0.08})`
+        ctx.fillRect(Math.round(it.x - 6), Math.round(it.y - 6 + bob), 12, 12)
+      }
+      ctx.drawImage(spr, Math.round(it.x - spr.width / 2), Math.round(it.y - spr.height / 2 + bob))
     }
   }
 
@@ -1502,12 +2254,13 @@ export class Game {
       ctx.fillStyle = '#1b1c24'
       ctx.fillRect(e.x - w / 2, e.y - e.r - 4, w, 2)
       ctx.fillStyle = '#e0453a'
-      ctx.fillRect(e.x - w / 2, e.y - e.r - 4, (w * e.hp) / e.maxHp, 2)
+      ctx.fillRect(e.x - w / 2, e.y - e.r - 4, (w * Math.max(0, e.hp)) / e.maxHp, 2)
     }
   }
 
   private drawBoss(b: Boss): void {
     const ctx = this.ctx
+    const def = BOSSES[b.id]!
     if (b.spawnT > 0) {
       ctx.strokeStyle = 'rgba(255, 210, 63, 0.9)'
       ctx.beginPath()
@@ -1519,11 +2272,45 @@ export class Game {
     ctx.beginPath()
     ctx.ellipse(b.x, b.y + b.r - 2, b.r, b.r * 0.35, 0, 0, Math.PI * 2)
     ctx.fill()
-    const spr = b.flash > 0 ? spriteWhite('boss', this.levelIdx) : spriteCanvas('boss', this.levelIdx)
-    const scale = b.dead ? Math.max(0, 1 - b.deadT / 1.2) : 1 + (b.phase === 2 ? Math.sin(this.time * 10) * 0.02 : 0)
+
+    // 铸神激光：预警线 / 喷射光束
+    if (b.id === 'zhushen' && b.pattern === 3 && !b.dead) {
+      if (b.step === 0) {
+        const a = 0.3 + Math.sin(this.time * 20) * 0.2
+        ctx.strokeStyle = `rgba(224, 69, 58, ${a})`
+        ctx.setLineDash([6, 4])
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.moveTo(b.x, b.y)
+        ctx.lineTo(b.x + b.aimX * 340, b.y + b.aimY * 340)
+        ctx.stroke()
+        ctx.setLineDash([])
+        ctx.lineWidth = 1
+      } else {
+        const grad = ctx.createLinearGradient(b.x, b.y, b.x + b.aimX * 340, b.y + b.aimY * 340)
+        grad.addColorStop(0, '#ffd23f')
+        grad.addColorStop(1, 'rgba(255,120,40,0.1)')
+        ctx.strokeStyle = grad
+        ctx.lineWidth = 7
+        ctx.beginPath()
+        ctx.moveTo(b.x, b.y)
+        ctx.lineTo(b.x + b.aimX * 340, b.y + b.aimY * 340)
+        ctx.stroke()
+        ctx.strokeStyle = '#ffffff'
+        ctx.lineWidth = 2.5
+        ctx.beginPath()
+        ctx.moveTo(b.x, b.y)
+        ctx.lineTo(b.x + b.aimX * 340, b.y + b.aimY * 340)
+        ctx.stroke()
+        ctx.lineWidth = 1
+      }
+    }
+
+    const spr = b.flash > 0 ? spriteWhite(def.sprite, this.levelIdx) : spriteCanvas(def.sprite, this.levelIdx)
+    const scale = b.dead ? Math.max(0, 1 - b.deadT / 1.2) : 1 + (b.phase >= 2 ? Math.sin(this.time * 10) * 0.02 : 0)
     ctx.save()
     ctx.translate(Math.round(b.x), Math.round(b.y))
-    ctx.scale(scale * 2.3, scale * 2.3) // 26×26 画布按 2.3 倍出，更威压
+    ctx.scale(scale * 2.1, scale * 2.1)
     if (b.dead) ctx.rotate(b.deadT * 1.5)
     ctx.drawImage(spr, -spr.width / 2, -spr.height / 2)
     ctx.restore()
@@ -1532,12 +2319,12 @@ export class Game {
       const x = (VIEW_W - w) / 2
       ctx.fillStyle = '#1b1c24'
       ctx.fillRect(x - 1, 8, w + 2, 6)
-      ctx.fillStyle = b.phase === 2 ? '#e0453a' : '#ffd23f'
-      ctx.fillRect(x, 9, (w * b.hp) / b.maxHp, 4)
+      ctx.fillStyle = b.phase === 3 ? '#ff7840' : b.phase === 2 ? '#e0453a' : '#ffd23f'
+      ctx.fillRect(x, 9, (w * Math.max(0, b.hp)) / b.maxHp, 4)
       ctx.fillStyle = '#f5f5f7'
       ctx.font = 'bold 8px "PingFang SC", "Microsoft YaHei", sans-serif'
       ctx.textAlign = 'center'
-      ctx.fillText('铁面钱王 · 咸丰当百', VIEW_W / 2, 7)
+      ctx.fillText(def.name, VIEW_W / 2, 7)
       ctx.textAlign = 'left'
     }
   }
@@ -1554,12 +2341,14 @@ export class Game {
     ctx.ellipse(p.x, p.y + 9, 9, 3.5, 0, 0, Math.PI * 2)
     ctx.fill()
     // 手臂/武器
+    const def = this.weaponDef()
+    const gun = def.pattern === 'orbit' || def.pattern === 'slash' || def.pattern === 'slam' ? '#e8e2ff' : def.gun
     ctx.save()
     ctx.translate(p.x, p.y)
     ctx.rotate(p.aim)
     ctx.fillStyle = '#1f4fb8'
     ctx.fillRect(3, -2, 9, 4)
-    ctx.fillStyle = '#f4c542'
+    ctx.fillStyle = gun
     ctx.fillRect(11, -2, 4, 4)
     ctx.restore()
     ctx.save()
@@ -1570,21 +2359,64 @@ export class Game {
     ctx.restore()
   }
 
+  /** 环绕钱刀（视觉跟随玩家旋转）。 */
+  private drawOrbit(): void {
+    if (!this.orbitOn) return
+    const ctx = this.ctx
+    const p = this.player
+    const spr = spriteCanvas('orbitBlade', this.levelIdx)
+    for (let k = 0; k < 3; k++) {
+      const a = this.orbitAngle + (k / 3) * Math.PI * 2
+      const x = p.x + Math.cos(a) * 26
+      const y = p.y + Math.sin(a) * 26
+      ctx.save()
+      ctx.translate(Math.round(x), Math.round(y))
+      ctx.rotate(this.orbitAngle * 3 + k * 2)
+      ctx.drawImage(spr, -spr.width / 2, -spr.height / 2)
+      ctx.restore()
+      if (!REDUCED_MOTION && Math.random() < 0.25) this.particles.trail(x, y, 'rgba(224,220,255,0.5)')
+    }
+  }
+
   private drawBullets(): void {
     const ctx = this.ctx
     for (const b of this.bullets) {
-      if (b.friendly) {
-        const spr = spriteCanvas('proj', this.levelIdx)
-        ctx.save()
-        ctx.translate(Math.round(b.x), Math.round(b.y))
-        ctx.rotate(b.spin)
-        ctx.drawImage(spr, -spr.width / 2, -spr.height / 2)
-        ctx.restore()
-        if (!REDUCED_MOTION && Math.random() < 0.3) this.particles.trail(b.x, b.y, 'rgba(255,210,63,0.5)')
-      } else {
-        ctx.drawImage(spriteCanvas('ebullet', this.levelIdx), Math.round(b.x - 2.5), Math.round(b.y - 2.5))
+      if (b.hidden) continue
+      const name = b.sprite ?? (b.friendly ? 'proj' : 'ebullet')
+      const spr = spriteCanvas(name, this.levelIdx)
+      const dy = b.z ? -b.z : 0
+      // 抛射阴影
+      if (b.z !== undefined && b.z > 2) {
+        ctx.fillStyle = 'rgba(0,0,0,0.25)'
+        ctx.beginPath()
+        ctx.ellipse(b.x, b.y, 3, 1.5, 0, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      ctx.save()
+      ctx.translate(Math.round(b.x), Math.round(b.y + dy))
+      ctx.rotate(b.spin)
+      ctx.drawImage(spr, -spr.width / 2, -spr.height / 2)
+      ctx.restore()
+      if (b.friendly && !REDUCED_MOTION && Math.random() < 0.3) {
+        this.particles.trail(b.x, b.y + dy, b.trailC ?? 'rgba(255,210,63,0.5)')
       }
     }
+  }
+
+  private drawFloats(): void {
+    if (this.floats.length === 0) return
+    const ctx = this.ctx
+    ctx.textAlign = 'center'
+    for (const f of this.floats) {
+      ctx.globalAlpha = Math.max(0, 1 - f.t / 0.75)
+      ctx.font = `bold ${f.size}px "PingFang SC", "Microsoft YaHei", sans-serif`
+      ctx.fillStyle = '#1b1c24'
+      ctx.fillText(f.text, Math.round(f.x) + 1, Math.round(f.y) + 1)
+      ctx.fillStyle = f.color
+      ctx.fillText(f.text, Math.round(f.x), Math.round(f.y))
+    }
+    ctx.globalAlpha = 1
+    ctx.textAlign = 'left'
   }
 
   private drawHud(): void {
@@ -1602,7 +2434,7 @@ export class Game {
     const heart = spriteCanvas('heart', this.levelIdx)
     for (let i = 0; i < p.maxHp; i++) {
       const x = 6 + i * 9
-      const y = HUD_Y + 4
+      const y = HUD_Y + 3
       if (i < p.hp) ctx.drawImage(heart, x, y)
       else {
         ctx.globalAlpha = 0.25
@@ -1611,12 +2443,35 @@ export class Game {
       }
     }
 
-    // 关名
+    // 能量条（血量下方）
+    const def = this.weaponDef()
+    const ew = 64
+    const ex = 6
+    const ey = HUD_Y + 11
+    const ratio = clamp(p.energy / this.weapon.energyMax, 0, 1)
+    const blink = Math.floor(this.time * 10) % 2 === 0
+    const low = this.energyFlash > 0 && blink
+    ctx.fillStyle = '#1b1c24'
+    ctx.fillRect(ex - 1, ey - 1, ew + 2, 4)
+    ctx.fillStyle = low ? '#e0453a' : ratio >= 0.999 ? '#ffd23f' : '#43d0ff'
+    ctx.fillRect(ex, ey, Math.round(ew * ratio), 2)
+    if (low) {
+      ctx.fillStyle = '#e0453a'
+      ctx.font = 'bold 6px "PingFang SC", "Microsoft YaHei", sans-serif'
+      ctx.fillText('能量不足', ex + ew + 4, ey + 3)
+    } else {
+      // 微型能量珠标记
+      ctx.fillStyle = '#43d0ff'
+      ctx.fillRect(ex + ew + 3, ey, 2, 2)
+    }
+
+    // 关名 + 当前武器
     ctx.fillStyle = '#f5f5f7'
     ctx.font = 'bold 8px "PingFang SC", "Microsoft YaHei", sans-serif'
     ctx.textAlign = 'center'
     const lv = LEVELS[this.levelIdx]!
-    ctx.fillText(`第${this.levelIdx + 1}关 ${lv.era} · ${lv.projName} 强化×${this.weapon.upgrades}`, VIEW_W / 2, HUD_Y + 9)
+    const wname = def.name
+    ctx.fillText(`第${this.levelIdx + 1}关 ${lv.era} · ${wname} 强化×${this.weapon.upgrades}`, VIEW_W / 2, HUD_Y + 9)
 
     // 小地图（右上）：大厅居中 + 四门房 + 底部关底
     const mm = { x: VIEW_W - 34, y: 4 }

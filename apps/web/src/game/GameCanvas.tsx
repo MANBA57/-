@@ -6,6 +6,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Game, VIEW_W, VIEW_H, DEFAULT_KEYS, type KeyBindings } from './game'
 import { LEVELS, UPGRADE_CYCLE, UPGRADE_LABEL } from './data/levels'
+import { WEAPONS, WEAPON_OFFERS, type WeaponDef } from './data/weapons'
+import { spriteCanvas } from './sprites'
 import { CHEST_COINS, type ChestCoin } from './data/coins'
 import { QUESTIONS, type QuizQuestion } from './data/questions'
 import {
@@ -263,6 +265,7 @@ function GameStage({
       game.weapon = { ...carry.weapon }
       game.player.maxHp = carry.maxHp
       game.player.hp = carry.maxHp
+      game.player.energy = carry.weapon.energyMax
     }
     game.sfx.muted = !sfxOn
     game.start()
@@ -419,7 +422,7 @@ function GameStage({
         <SettingsPanel onClose={() => setSettingsOpen(false)} onApply={applySettings} />
       ) : null}
 
-      {/* 过关 */}
+      {/* 过关 · 武器架三选一（+保留当前） */}
       {phase === 'clear' ? (
         <Overlay>
           <p className="text-caption text-[#8a8f98]">
@@ -431,21 +434,24 @@ function GameStage({
               弹丸进化：<span className="text-[#f5f5f7]">{LEVELS[clearLevel]?.projName}</span> →{' '}
               <span className="text-[#ffd23f]">{nextLv.projName}</span>
             </p>
-            <p>血量上限 +1，已全部回满</p>
+            <p>血量上限 +1 · 血量能量全满 · 选一件武器进入 {nextLv.era}（强化数值随身保留）</p>
           </div>
-          <button
-            type="button"
-            className="btn-game px-10 py-2"
-            onClick={() => {
+          <WeaponRack
+            offers={(WEAPON_OFFERS[Math.min(6, clearLevel + 1)] ?? []).filter(
+              (id) => id !== (gameRef.current?.weapon.weaponId ?? 'rapid'),
+            )}
+            currentId={gameRef.current?.weapon.weaponId ?? 'rapid'}
+            era={Math.min(6, clearLevel + 1)}
+            onPick={(id) => {
               levelRef.current = Math.min(6, clearLevel + 1)
               chestIdxRef.current = 0
               deckRef.current = []
-              gameRef.current?.nextLevel()
+              const g = gameRef.current
+              if (g && id !== g.weapon.weaponId) g.switchWeapon(id)
+              g?.nextLevel()
               setPhase('play')
             }}
-          >
-            进入 {nextLv.era}
-          </button>
+          />
         </Overlay>
       ) : null}
 
@@ -698,6 +704,81 @@ function Joystick({
         style={{ transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))` }}
       />
       <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-micro text-[#8a8f98]">{label}</span>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------ 武器架 */
+
+/** 武器卡片图标（弹丸/近战 sprite 按下一关朝代调色板渲染）。 */
+function weaponIconSprite(w: WeaponDef): string {
+  if (w.pattern === 'slash') return 'slash'
+  if (w.pattern === 'orbit') return 'orbitBlade'
+  if (w.pattern === 'slam') return 'slamIcon'
+  return w.sprite ?? 'proj'
+}
+
+function WeaponIcon({ sprite, era, size = 44 }: { sprite: string; era: number; size?: number }) {
+  const ref = useRef<HTMLCanvasElement | null>(null)
+  useEffect(() => {
+    const cv = ref.current
+    if (!cv) return
+    const spr = spriteCanvas(sprite, era)
+    const ctx = cv.getContext('2d')!
+    ctx.imageSmoothingEnabled = false
+    ctx.clearRect(0, 0, cv.width, cv.height)
+    const scale = Math.max(1, Math.floor(Math.min(cv.width / spr.width, cv.height / spr.height)))
+    const w = spr.width * scale
+    const h = spr.height * scale
+    ctx.drawImage(spr, Math.floor((cv.width - w) / 2), Math.floor((cv.height - h) / 2), w, h)
+  }, [sprite, era])
+  return <canvas ref={ref} width={size} height={size} style={{ imageRendering: 'pixelated' }} aria-hidden />
+}
+
+const CLS_BADGE: Record<string, string> = {
+  近战: 'text-[#e8f1f8] border-[#8a97ab]',
+  远程: 'text-[#ffd23f] border-[#8f7a2e]',
+  爆炸: 'text-[#ff9650] border-[#9c5a2e]',
+}
+
+function WeaponRack({
+  offers,
+  currentId,
+  era,
+  onPick,
+}: {
+  offers: string[]
+  currentId: string
+  era: number
+  onPick: (id: string) => void
+}) {
+  const cards: { w: WeaponDef; keep: boolean }[] = [
+    ...offers.map((id) => ({ w: WEAPONS[id]!, keep: false })),
+    { w: WEAPONS[currentId] ?? WEAPONS.rapid!, keep: true },
+  ]
+  return (
+    <div className="grid w-full max-w-2xl grid-cols-2 gap-2 sm:grid-cols-4">
+      {cards.map(({ w, keep }) => (
+        <button
+          key={w.id}
+          type="button"
+          className={`game-panel flex flex-col items-center gap-1 p-3 text-center transition-transform hover:-translate-y-0.5 ${
+            keep ? 'ring-1 ring-[#ffd23f]/60' : ''
+          }`}
+          onClick={() => onPick(w.id)}
+        >
+          <WeaponIcon sprite={weaponIconSprite(w)} era={era} />
+          <p className="text-body font-semibold text-[#ffd23f]">
+            {w.name}
+            {keep ? ' · 保留' : ''}
+          </p>
+          <p className={`rounded border px-1.5 text-micro ${CLS_BADGE[w.cls] ?? ''}`}>{w.cls}</p>
+          <p className="text-micro text-[#8a8f98]">
+            {w.pattern === 'orbit' ? `${w.cost} 能量/秒` : `${w.cost} 能量/发`}
+          </p>
+          <p className="text-micro leading-relaxed text-[#c8cdd8]">{w.desc}</p>
+        </button>
+      ))}
     </div>
   )
 }
